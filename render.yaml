@@ -1,0 +1,23 @@
+# Render Blueprint — single Docker web service.
+# The image builds the Next.js static export and serves it together with the
+# FastAPI API + WebSocket from one process: one public URL, no CORS.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: confluence-engine
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    # Render injects $PORT; the container CMD binds 0.0.0.0:$PORT.
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      # Set the real value in the Render dashboard (Environment tab). It is a
+      # secret and is NEVER stored in this repo. Without it the coach falls back
+      # to rule-based notes; the rest of the app works.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Optional: only for a separate-origin frontend. Single-service is
+      # same-origin, so leave this unset. Uncomment to use.
+      # - key: FRONTEND_ORIGIN
+      #   sync: false

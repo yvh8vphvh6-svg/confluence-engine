@@ -1,0 +1,27 @@
+# Keep the build context small and NEVER ship secrets or local state.
+.git
+.gitignore
+.venv
+**/__pycache__
+*.pyc
+.pytest_cache
+
+node_modules
+frontend/node_modules
+frontend/.next
+frontend/out
+
+# local runtime state (SQLite memory / journal / results)
+output
+
+# secrets — must never enter the image
+.env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+
+# dev-only sibling project (not part of this app)
+trading-sim
+
+# NOTE: markdown is intentionally NOT ignored — backend/EDUCATION.md is read at runtime.

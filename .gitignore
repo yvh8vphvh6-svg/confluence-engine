@@ -1,0 +1,33 @@
+# ---- secrets: NEVER commit these ----
+.env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+.venv/
+node_modules/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+backend/data/*.db
+
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+# Next.js static export output (built in CI / Docker)
+frontend/out/
+*.tsbuildinfo
+npm-debug.log*
+
+# accidental venv artifacts
+then/
+.venvn/
+.venvScriptsactivate/
+# generated backtest outputs
+output/
+
+# sibling prototype project, not part of the deployable app (has build
+# artifacts / SQLite dbs); excluded from the deploy repo.
+trading-sim/

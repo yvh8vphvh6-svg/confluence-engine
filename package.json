@@ -1,0 +1,20 @@
+{
+  "name": "confluence-engine",
+  "private": true,
+  "version": "2.0.0",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently --kill-others --names backend,frontend --prefix-colors cyan,magenta \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": ".venv/bin/uvicorn backend.main:app --reload --port 8000",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "typecheck": "npm run typecheck --prefix frontend",
+    "sweep": ".venv/bin/python -m backend.run_backtest",
+    "verify": ".venv/bin/python -m backend.run_backtest --verify"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
