@@ -13,7 +13,7 @@ export default function IndicatorsPage() {
         <h1 className="text-xl font-semibold text-text">Indicators index</h1>
         <p className="text-sm text-muted">
           What each indicator is for, and whether it earns its place. An indicator can organize
-          information; it cannot add information that isn't already in the price.
+          information; it cannot add information that isn&apos;t already in the price.
         </p>
       </header>
 

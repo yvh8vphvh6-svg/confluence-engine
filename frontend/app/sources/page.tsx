@@ -6,7 +6,7 @@ export default function SourcesPage() {
       <header>
         <h1 className="text-xl font-semibold text-text">Peer review &amp; sources</h1>
         <p className="text-sm text-muted">
-          Verified, reputable starting points. Verify the details yourself — that's the point.
+          Verified, reputable starting points. Verify the details yourself — that&apos;s the point.
         </p>
       </header>
 

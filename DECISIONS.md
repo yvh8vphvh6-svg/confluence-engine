@@ -511,3 +511,53 @@ P7-6. **Render Blueprint** [`render.yaml`](./render.yaml): one `type: web`,
 P7-7. **Gates stay green:** `python -m backend.run_backtest --verify` remains
    DETERMINISTIC (32 runs reproducible in- and cross-process), `npm run build`
    passes and emits the static export, and `pytest` is 12/12.
+
+## Pass 8 — animated pattern demos in the glossary (proof of concept)
+
+Added small auto-drawing chart "clips" to glossary terms that have a visual
+price-action shape. Scoped to exactly 3 terms — Fair Value Gap, Order Block,
+Liquidity Sweep / Stop Hunt — as a proof of concept; the other terms are
+untouched. Not video, not embeds: each clip renders from a tiny hand-authored
+OHLC array using the same `lightweight-charts` setup as the rest of the app.
+
+P8-1. **Reusable component** [`components/PatternDemo.tsx`](./frontend/components/PatternDemo.tsx).
+   `<PatternDemo bars zones marks height? durationMs? />` draws the candles
+   left-to-right over ~1.5s (`setData(slice)` on a timer), then reveals the
+   highlight zone(s) + markers and holds the finished shape. The y-axis is
+   locked via `autoscaleInfoProvider` and the x-axis via a fixed
+   `setVisibleLogicalRange`, so candles don't rescale/jitter while drawing
+   (textbook-clean). Same colors/grid/style as `ConceptChart`/`DrillChart`.
+   Built to be reused for more terms and the strategy library — just pass new
+   data. No new deps (reuses lightweight-charts 4.2.3).
+
+P8-2. **Replay over infinite loop.** The clip auto-plays once on expand and then
+   holds the completed pattern with a "↻ Replay" button. Chosen over a
+   continuous loop so the finished textbook shape stays on screen to study and
+   isn't visually noisy in the grid (the brief says "loops OR offers a replay
+   button").
+
+P8-3. **Hand-authored data** [`lib/patternDemos.ts`](./frontend/lib/patternDemos.ts),
+   keyed by the exact glossary term string (decoupled from `glossary.ts`, which
+   stays pure text and untouched). Each is ~10 candles with a zone + 1–2 markers
+   highlighting the key part: FVG → the gap zone + retest; OB → the order-block
+   candle + mitigation; Sweep → the swept liquidity line + sweep wick + reversal.
+   Invariants asserted in CI-style check (all pass): FVG candle1.high <
+   candle3.low and the retest dips into the gap; OB marker is the last down
+   candle before a larger up impulse and the zone equals its range; the sweep
+   wick pokes above the level, closes back below, then reverses down.
+
+P8-4. **Collapsed by default.** A `GlossaryDemo` toggle ("Show example ▸") sits
+   below the Example line in the card; expanding renders the demo and plays it.
+   The grid stays clean. `PatternDemo` is `dynamic(..., { ssr:false })` so the
+   chart lib is a separate chunk loaded only when a demo is opened.
+
+P8-5. **Labeled as teaching.** Every clip shows
+   "Illustration — idealized example, not real market data." plus a one-line
+   caption of what to watch. It's a diagram, not a prediction.
+
+P8-6. **Verified (no browser needed):** `npm run build` passes and the static
+   export contains the toggle for exactly the 3 terms; the page serves 200 +
+   styled and the live WebSocket stream produces frames; the 9 pattern-data
+   invariants hold; `--verify` stays DETERMINISTIC (32 runs). Final visual
+   confirmation of the animation is a browser open of `/glossary` → expand one
+   of the 3 terms.

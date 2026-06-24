@@ -1,5 +1,14 @@
 import { create } from "zustand";
 
+import {
+  computeQuality,
+  computeWonLostFactors,
+  type EntryCtx,
+  type Prediction,
+  type QualityScores,
+  type WonLostFactor,
+} from "./quality";
+
 export type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 export type StreamState = "idle" | "building" | "ready" | "error";
 export type Regime = "trending" | "ranging" | "high_vol" | "low_vol";
@@ -193,6 +202,22 @@ export type PaperPosition = {
   openedAt: string;
   openedBar: number;
   regime: string;
+  // learning-loop context (captured at entry)
+  prediction: Prediction | null;
+  entryCtx: EntryCtx | null;
+  snapshot: TradeSnapshot | null;
+};
+
+// pattern-library snapshot: the bar window + trade levels captured at entry so
+// the thumbnail can be redrawn later (no live re-tracking needed).
+export type TradeSnapshot = {
+  bars: { time: number; open: number; high: number; low: number; close: number }[];
+  entry: number;
+  stop: number;
+  target: number;
+  direction: Direction;
+  strategy: string;
+  regime: string;
 };
 
 export type PaperTrade = {
@@ -209,6 +234,24 @@ export type PaperTrade = {
   regime: string;
   opened_at: string;
   closed_at: string;
+  // learning-loop fields
+  prediction: Prediction | null;
+  quality: QualityScores | null;
+  wonLostFactors: WonLostFactor[];
+  snapshot: TradeSnapshot | null;
+};
+
+// live counters for the current practice session (powers the session review)
+export type SessionStats = {
+  startedAt: number;
+  setupsSeen: number;
+  taken: number;
+  wins: number;
+  losses: number;
+  skippedQualified: number;
+  missedR: number;
+  qualitySum: number;
+  qualityCount: number;
 };
 
 export type OverlayToggles = Record<OverlayKind, boolean>;
@@ -239,6 +282,7 @@ type Store = {
   meta: StreamMeta | null;
   latestTick: SimulationTick | null;
   frame: { token: number; candles: OHLCPoint[] } | null;
+  recentBars: OHLCPoint[]; // rolling window for pattern-library snapshots
   config: SimConfig;
   overlayToggles: OverlayToggles;
   inspector: StrategySignalView | null;
@@ -253,6 +297,8 @@ type Store = {
   paperPosition: PaperPosition | null;
   paperTrades: PaperTrade[];
   skippedKey: string | null;
+  lastClosed: PaperTrade | null; // drives the post-trade card
+  session: SessionStats;
   setLearnOpen: (open: boolean) => void;
   setTourOpen: (open: boolean) => void;
   setTeach: (t: Teach | null) => void;
@@ -270,7 +316,63 @@ type Store = {
   skipSetup: (key: string) => void;
   closePaper: (exit: number, reason: string, closedAt: string, bar: number) => PaperTrade | null;
   resetPaper: () => void;
+  // learning-loop session tracking + post-trade card
+  noteSetupSeen: () => void;
+  noteSkippedQualified: (rPotential: number) => void;
+  dismissPostTrade: () => void;
+  resetSession: () => void;
 };
+
+// Maps a closed paper trade (with prediction + quality) to the backend
+// /journal/trade payload. Shared by the manual and auto-close paths.
+export function tradeLogPayload(
+  t: PaperTrade,
+  symbol: string,
+  timeframe: string,
+  extra: { emotion?: string; mistakes?: string[] } = {},
+): Record<string, unknown> {
+  return {
+    symbol,
+    timeframe,
+    strategy: t.strategy,
+    direction: t.direction,
+    regime: t.regime,
+    entry_price: t.entry,
+    exit_price: t.exit,
+    stop: t.stop,
+    target: t.target,
+    contracts: t.contracts,
+    r_multiple: t.r_multiple,
+    pnl_dollars: t.pnl_dollars,
+    exit_reason: t.exit_reason,
+    opened_at: t.opened_at,
+    closed_at: t.closed_at,
+    emotion: extra.emotion ?? "",
+    mistakes: extra.mistakes ?? [],
+    predicted_direction: t.prediction?.dir ?? "",
+    prediction_correct: t.prediction?.correct ?? null,
+    confidence: t.prediction?.confidence ?? null,
+    decision_ms: t.prediction?.decisionMs ?? null,
+    take_skip_rationale: t.prediction?.rationale ?? "",
+    quality: t.quality
+      ? { setup: t.quality.setup, risk: t.quality.risk, execution: t.quality.execution, outcome: t.quality.outcome, total: t.quality.total }
+      : null,
+    won_lost_factors: t.wonLostFactors,
+    snapshot: t.snapshot,
+  };
+}
+
+const FRESH_SESSION = (startedAt: number): SessionStats => ({
+  startedAt,
+  setupsSeen: 0,
+  taken: 0,
+  wins: 0,
+  losses: 0,
+  skippedQualified: 0,
+  missedR: 0,
+  qualitySum: 0,
+  qualityCount: 0,
+});
 
 function pointValue(meta: StreamMeta | null): number {
   return meta?.instrument.point_value ?? 1;
@@ -283,6 +385,7 @@ export const useStore = create<Store>((set) => ({
   meta: null,
   latestTick: null,
   frame: null,
+  recentBars: [],
   config: {
     symbol: "MNQ",
     timeframe: "5m",
@@ -302,6 +405,8 @@ export const useStore = create<Store>((set) => ({
   paperPosition: null,
   paperTrades: [],
   skippedKey: null,
+  lastClosed: null,
+  session: FRESH_SESSION(Date.now()),
   setLearnOpen: (learnOpen) => set({ learnOpen }),
   setTourOpen: (tourOpen) => set({ tourOpen }),
   setTeach: (teach) => set({ teach }),
@@ -309,28 +414,52 @@ export const useStore = create<Store>((set) => ({
   setConnection: (connection) => set({ connection }),
   setStream: (stream, error = "") => set({ stream, error }),
   setMeta: (meta) => set({ meta, paperStart: meta.starting_balance }),
-  receiveTick: (latestTick) => set({ latestTick }),
+  receiveTick: (latestTick) =>
+    set((s) => {
+      const bar = latestTick.ohlc;
+      const prev = s.recentBars;
+      const last = prev[prev.length - 1];
+      // replace the forming bar (same time) or append a new one; cap the window
+      const merged = last && last.time === bar.time ? [...prev.slice(0, -1), bar] : [...prev, bar];
+      return { latestTick, recentBars: merged.slice(-120) };
+    }),
   receiveFrame: (t) =>
     set((s) => ({
       latestTick: t,
       frame: { token: (s.frame?.token ?? 0) + 1, candles: t.candles ?? [] },
+      recentBars: (t.candles ?? []).slice(-120),
     })),
   setConfig: (patch) => set((s) => ({ config: { ...s.config, ...patch } })),
   toggleOverlay: (k) =>
     set((s) => ({ overlayToggles: { ...s.overlayToggles, [k]: !s.overlayToggles[k] } })),
   openInspector: (inspector) => set({ inspector }),
   setManualMode: (manualMode) => set({ manualMode }),
-  takePaper: (paperPosition) => set({ paperPosition, skippedKey: null }),
+  takePaper: (paperPosition) =>
+    set((s) => ({ paperPosition, skippedKey: null, session: { ...s.session, taken: s.session.taken + 1 } })),
   skipSetup: (skippedKey) => set({ skippedKey }),
   closePaper: (exit, reason, closedAt, bar) => {
     const s = useStore.getState();
     const p = s.paperPosition;
     if (!p) return null;
-    const dir = p.direction === "long" ? 1 : -1;
+    const dirSign = p.direction === "long" ? 1 : -1;
     const pv = pointValue(s.meta);
-    const pnl = (exit - p.entry) * dir * pv * p.contracts;
+    const pnl = (exit - p.entry) * dirSign * pv * p.contracts;
     const risk = Math.abs(p.entry - p.stop);
-    const r = risk > 0 ? ((exit - p.entry) * dir) / risk : 0;
+    const r = risk > 0 ? ((exit - p.entry) * dirSign) / risk : 0;
+    const rMultiple = Number(r.toFixed(4));
+    // compute trade quality + won/lost heuristic from real entry context
+    const quality = computeQuality({
+      entryCtx: p.entryCtx,
+      entry: p.entry,
+      stop: p.stop,
+      target: p.target,
+      exit,
+      exitReason: reason,
+      contracts: p.contracts,
+      pointValue: pv,
+      rMultiple,
+    });
+    const wonLostFactors = computeWonLostFactors(p.entryCtx);
     const trade: PaperTrade = {
       strategy: p.strategy,
       direction: p.direction,
@@ -339,20 +468,49 @@ export const useStore = create<Store>((set) => ({
       stop: p.stop,
       target: p.target,
       contracts: p.contracts,
-      r_multiple: Number(r.toFixed(4)),
+      r_multiple: rMultiple,
       pnl_dollars: Number(pnl.toFixed(2)),
       exit_reason: reason,
       regime: p.regime,
       opened_at: p.openedAt,
       closed_at: closedAt,
+      prediction: p.prediction,
+      quality,
+      wonLostFactors,
+      snapshot: p.snapshot,
     };
     set({
       paperPosition: null,
       paperBalance: Number((s.paperBalance + pnl).toFixed(2)),
       paperTrades: [...s.paperTrades, trade],
+      lastClosed: trade,
+      session: {
+        ...s.session,
+        wins: s.session.wins + (rMultiple > 0 ? 1 : 0),
+        losses: s.session.losses + (rMultiple < 0 ? 1 : 0),
+        qualitySum: s.session.qualitySum + quality.total,
+        qualityCount: s.session.qualityCount + 1,
+      },
     });
     return trade;
   },
   resetPaper: () =>
-    set((s) => ({ paperBalance: s.paperStart, paperPosition: null, paperTrades: [] })),
+    set((s) => ({
+      paperBalance: s.paperStart,
+      paperPosition: null,
+      paperTrades: [],
+      lastClosed: null,
+      session: FRESH_SESSION(Date.now()),
+    })),
+  noteSetupSeen: () => set((s) => ({ session: { ...s.session, setupsSeen: s.session.setupsSeen + 1 } })),
+  noteSkippedQualified: (rPotential) =>
+    set((s) => ({
+      session: {
+        ...s.session,
+        skippedQualified: s.session.skippedQualified + 1,
+        missedR: Number((s.session.missedR + Math.max(0, rPotential)).toFixed(2)),
+      },
+    })),
+  dismissPostTrade: () => set({ lastClosed: null }),
+  resetSession: () => set({ session: FRESH_SESSION(Date.now()) }),
 }));

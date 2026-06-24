@@ -37,7 +37,7 @@ export default function Leaderboard({ compact = false, limit }: { compact?: bool
   }, [rows, limit]);
 
   return (
-    <div className="panel p-4">
+    <div className="panel tilt3d p-4">
       <div className="mb-3 flex items-center justify-between">
         <p className="panel-head">Leaderboard · expectancy (R)</p>
         {!ready && <span className="chip border-warn/40 text-warn">computing backtests…</span>}

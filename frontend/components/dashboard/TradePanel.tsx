@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { logPaperTrade, MISTAKE_TAGS } from "../../lib/api";
-import { useStore, type Direction, type PaperPosition } from "../../lib/store";
+import { useSettings } from "../../lib/settings";
+import { tradeLogPayload, useStore, type Direction, type PaperPosition } from "../../lib/store";
 import { useBestSetup } from "../../lib/useBestSetup";
 import { fmt, usd, signColor } from "../../lib/format";
 
@@ -48,9 +49,10 @@ export default function TradePanel() {
     setTpPts(Number((s * 2).toFixed(2)));
   }, [atr, tickSize, touched]);
 
-  // suggested 1%-risk size from the current stop
+  // suggested risk-based size from the current stop (risk % from Settings)
+  const riskFraction = useSettings((s) => s.settings.riskPerTradePct) / 100;
   const riskPerContract = stopPts * pv;
-  const suggestedSize = riskPerContract > 0 ? (0.01 * balance) / riskPerContract : 0;
+  const suggestedSize = riskPerContract > 0 ? (riskFraction * balance) / riskPerContract : 0;
   useEffect(() => {
     if (touched || !suggestedSize) return;
     setSize(Number(suggestedSize.toFixed(2)));
@@ -76,6 +78,29 @@ export default function TradePanel() {
       openedAt: tick.ohlc.time.toString(),
       openedBar: tick.bar_index,
       regime: tick.regime,
+      // manual order: no prediction; grade quality against the live confluence
+      prediction: null,
+      entryCtx: {
+        confluence: tick.confluence?.confidence ?? 0.6,
+        threshold: tick.confluence?.threshold ?? 0.65,
+        factorsPresent: Object.values(tick.confluence?.score_breakdown ?? {}).filter((v) => v > 0).length,
+        factorsTotal: 4,
+        favorableRegime: tick.regime,
+        regime: tick.regime,
+        timingOk: (tick.confluence?.score_breakdown?.timing ?? 0) > 0,
+        entryZoneOk: true,
+        riskPct: riskFraction * 100,
+        balanceAtEntry: balance,
+      },
+      snapshot: {
+        bars: useStore.getState().recentBars.slice(-40).map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })),
+        entry: Number(entry.toFixed(4)),
+        stop: Number(stop.toFixed(4)),
+        target: Number(target.toFixed(4)),
+        direction,
+        strategy: "Manual",
+        regime: tick.regime,
+      },
     };
     takePaper(p);
   };
@@ -93,13 +118,8 @@ export default function TradePanel() {
     if (!position || !tick) return;
     const t = closePaper(price, "manual", tick.ohlc.time.toString(), tick.bar_index);
     if (t)
-      logPaperTrade({
-        symbol: tick.symbol, timeframe: tick.timeframe, strategy: t.strategy, direction: t.direction,
-        regime: t.regime, entry_price: t.entry, exit_price: t.exit, stop: t.stop, target: t.target,
-        contracts: t.contracts, r_multiple: t.r_multiple, pnl_dollars: t.pnl_dollars,
-        exit_reason: t.exit_reason, opened_at: t.opened_at, closed_at: t.closed_at,
-        emotion: closeEmotion, mistakes: closeMistakes,
-      }).catch(() => undefined);
+      logPaperTrade(tradeLogPayload(t, tick.symbol, tick.timeframe, { emotion: closeEmotion, mistakes: closeMistakes }))
+        .catch(() => undefined);
     setCloseMistakes([]); setCloseEmotion("disciplined");
   };
 
@@ -189,7 +209,7 @@ export default function TradePanel() {
           </div>
           <p className="text-[10px] text-muted">
             Market fill ≈ {fmt(price)}. Risk/contract {usd.format(riskPerContract)} ·
-            1%-risk size ≈ {fmt(suggestedSize, 2)} ct · R:R {stopPts > 0 ? (tpPts / stopPts).toFixed(1) : "—"}:1
+            {(riskFraction * 100).toFixed(2)}%-risk size ≈ {fmt(suggestedSize, 2)} ct · R:R {stopPts > 0 ? (tpPts / stopPts).toFixed(1) : "—"}:1
           </p>
           <div className="flex gap-2">
             <button

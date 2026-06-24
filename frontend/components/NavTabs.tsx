@@ -42,6 +42,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
     title: "Track",
     items: [
       { href: "/journal", label: "Journal" },
+      { href: "/library", label: "Pattern Library" },
       { href: "/performance", label: "Performance" },
       { href: "/progress", label: "Progression" },
       { href: "/context", label: "Market Context" },

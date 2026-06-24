@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   FvgDiagram, OrderBlockDiagram, OpeningRangeDiagram, BosDiagram,
 } from "../../components/education/Diagrams";
+import RegimeMatrix from "../../components/RegimeMatrix";
 import { getStrategies, type StrategyInfo } from "../../lib/api";
 import { STRATEGY_DOCS, type StrategyDoc } from "../../lib/strategyLibrary";
 import { fmt, pct, signColor, REGIME_LABEL } from "../../lib/format";
@@ -55,6 +56,8 @@ export default function StrategiesPage() {
         {!ready && <span className="chip border-warn/40 text-warn">computing backtests…</span>}
       </header>
       {err && <p className="text-xs text-loss">{err}</p>}
+
+      <RegimeMatrix />
 
       <div className="grid gap-4 lg:grid-cols-2">
         {strategies.map((s) => {

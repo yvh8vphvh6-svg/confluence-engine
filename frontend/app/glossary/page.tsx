@@ -1,8 +1,35 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
 import { GLOSSARY, GLOSSARY_CATEGORIES, type GlossaryCategory } from "../../lib/glossary";
+import { PATTERN_DEMOS } from "../../lib/patternDemos";
+
+// Heavy chart lib loads only when a demo is expanded.
+const PatternDemo = dynamic(() => import("../../components/PatternDemo"), { ssr: false });
+
+function GlossaryDemo({ term }: { term: string }) {
+  const demo = PATTERN_DEMOS[term];
+  const [open, setOpen] = useState(false);
+  if (!demo) return null;
+  return (
+    <div className="mt-2 border-t border-line/60 pt-2">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="text-xs font-medium text-neon hover:brightness-110"
+      >
+        {open ? "Hide example ▾" : "Show example ▸"}
+      </button>
+      {open && (
+        <div className="mt-2">
+          {demo.caption && <p className="mb-1.5 text-[11px] text-muted">{demo.caption}</p>}
+          <PatternDemo bars={demo.bars} zones={demo.zones} marks={demo.marks} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function GlossaryPage() {
   const [q, setQ] = useState("");
@@ -53,6 +80,7 @@ export default function GlossaryPage() {
             <p className="mt-2 text-sm text-text">{t.definition}</p>
             <p className="mt-2 text-xs text-muted"><span className="font-medium text-neon">Why it matters:</span> {t.why}</p>
             <p className="mt-1 text-xs text-muted"><span className="font-medium text-warn">Example:</span> {t.example}</p>
+            <GlossaryDemo term={t.term} />
           </div>
         ))}
         {filtered.length === 0 && <p className="text-sm text-muted">No terms match.</p>}

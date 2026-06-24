@@ -120,6 +120,17 @@ export const MISTAKE_TAGS = [
   "off-plan", "early entry", "late entry",
 ] as const;
 
+export type TradeSnapshotBar = { time: number; open: number; high: number; low: number; close: number };
+export type TradeSnapshot = {
+  bars: TradeSnapshotBar[];
+  entry: number;
+  stop: number;
+  target: number;
+  direction: string;
+  strategy: string;
+  regime: string;
+};
+
 export type JournalTrade = {
   id: number;
   strategy: string;
@@ -136,6 +147,16 @@ export type JournalTrade = {
   mistakes: string;
   note: string;
   created_at: string;
+  // learning-loop fields (nullable for legacy rows)
+  predicted_direction: string;
+  prediction_correct: number | null;
+  confidence: number | null;
+  decision_ms: number | null;
+  take_skip_rationale: string;
+  quality_setup: number | null;
+  quality_total: number | null;
+  won_lost_factors: { label: string; score: number; note: string }[];
+  snapshot: TradeSnapshot | null;
 };
 
 export type JournalNote = {
@@ -174,6 +195,57 @@ export type JournalStats = {
   by_strategy: Record<string, { n: number; avg_r: number; win_rate: number }>;
   by_mistake: Record<string, number>;
   mistakes: string[];
+  avg_quality: number | null;
+  prediction_accuracy: number | null;
+};
+
+export type CalibrationBucket = {
+  band: string;
+  n: number;
+  won: number;
+  win_rate: number | null;
+  expected: number;
+  verdict: string | null;
+};
+
+export type Calibration = {
+  available: boolean;
+  provisional: boolean;
+  n: number;
+  buckets: CalibrationBucket[];
+};
+
+export type MissedSetup = {
+  id: number;
+  created_at: string;
+  symbol: string;
+  timeframe: string;
+  strategy: string;
+  direction: string;
+  regime: string;
+  r_potential: number;
+  confluence: number;
+  confidence: number | null;
+  decision_ms: number | null;
+  predicted_direction: string;
+  rationale: string;
+};
+
+export type SessionReviewRow = {
+  id: number;
+  created_at: string;
+  started_at: string;
+  ended_at: string;
+  setups_seen: number;
+  taken: number;
+  wins: number;
+  losses: number;
+  skipped_qualified: number;
+  missed_r: number;
+  avg_quality: number | null;
+  calibration: CalibrationBucket[];
+  focuses: string[];
+  reason: string;
 };
 
 export type WeeklyReview = {
@@ -190,17 +262,74 @@ export type JournalData = {
   trades: JournalTrade[];
   notes: JournalNote[];
   sessions: JournalSession[];
+  missed_setups: MissedSetup[];
+  session_reviews: SessionReviewRow[];
   stats: JournalStats;
   weekly: WeeklyReview[];
+  calibration: Calibration;
 };
 
 export const getJournal = (s?: AbortSignal) => getJson<JournalData>("/api/journal", s);
+
+// --- progression / engagement ---
+export type XpLedgerRow = { event: string; count: number; xp_each: number; xp: number };
+export type Tier = {
+  tier: string;
+  index: number;
+  count: number;
+  total: number;
+  floor: number;
+  ceil: number | null;
+  into_tier: number;
+  to_next: number | null;
+  next_tier: string | null;
+  pct: number;
+};
+export type Streak = { current: number; best: number; last_active_date: string | null };
+export type Badge = {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  unlocked: boolean;
+  progress: number;
+  target: number;
+  progress_label: string;
+  unlocked_at: string | null;
+};
+export type Challenge = { id: string; text: string; target: number; progress: number; complete: boolean; xp: number };
+export type DailyChallenges = { day: string; challenges: Challenge[]; completed: number };
+export type RegimeCell = { n: number; expectancy_r: number | null; sufficient: boolean };
+export type RegimeMatrix = {
+  regimes: string[];
+  strategies: string[];
+  cells: Record<string, Record<string, RegimeCell>>;
+  min_sample: number;
+};
+export type Progression = {
+  xp: { total: number; ledger: XpLedgerRow[]; tier: Tier };
+  streak: Streak;
+  badges: Badge[];
+  challenges: DailyChallenges;
+  regime_matrix: RegimeMatrix;
+};
+export const getProgression = (s?: AbortSignal) => getJson<Progression>("/api/progression", s);
 export const logPaperTrade = (trade: Record<string, unknown>) =>
   postJson<{ id: number }>("/api/journal/trade", trade);
+export const logMissedSetup = (m: Record<string, unknown>) =>
+  postJson<{ id: number }>("/api/journal/missed-setup", m);
+export const logSessionReview = (r: Record<string, unknown>) =>
+  postJson<{ id: number }>("/api/journal/session-review", r);
 export const addJournalNote = (note: Record<string, unknown>) =>
   postJson<{ id: number }>("/api/journal/note", note);
 export const addJournalSession = (sess: Record<string, unknown>) =>
   postJson<{ id: number }>("/api/journal/session", sess);
+export const clearJournal = async () => {
+  await fetch(`${apiBaseUrl()}/api/journal`, { method: "DELETE" });
+};
+export const clearDecisions = async () => {
+  await fetch(`${apiBaseUrl()}/api/decision`, { method: "DELETE" });
+};
 
 // --- decision-point training ---
 export type DecisionScenario = {

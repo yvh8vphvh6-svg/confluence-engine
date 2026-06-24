@@ -16,7 +16,7 @@ export default function BestSetup() {
       : null;
 
   return (
-    <div className="panel p-4" data-tour="best-setup">
+    <div className="panel tilt3d p-4" data-tour="best-setup">
       <div className="mb-3 flex items-center justify-between">
         <p className="panel-head">Best setup now</p>
         <div className="flex items-center gap-2">

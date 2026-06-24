@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+# scope checking to the files passed on the CLI; imported modules are analysed
+# for types but their own errors are not reported (this feature touched only the
+# journal + routes, not the numpy/pandas engine)
+follow_imports = "silent"
+check_untyped_defs = true

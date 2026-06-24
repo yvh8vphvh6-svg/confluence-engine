@@ -43,7 +43,7 @@ export default function EducationPage() {
       </div>
 
       <div className="panel p-5">
-        <p className="panel-head mb-3">Strategy families &amp; what they're for</p>
+        <p className="panel-head mb-3">Strategy families &amp; what they&apos;re for</p>
         <div className="space-y-3">
           {STRATEGY_FAMILIES.map((f) => (
             <div key={f.name} className="rounded-lg border border-line bg-black/20 p-3">

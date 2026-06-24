@@ -2,22 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Default theme = Terminal (channels). The inline boot script in the root
+   layout overrides these from localStorage before paint to avoid a flash. */
 :root {
   color-scheme: dark;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background-color: #0b0f19;
-  color: #e7ecf5;
+  --bg: 11 15 25;
+  --sur: 26 31 46;
+  --sur2: 32 40 58;
+  --ac: 0 230 118;
+  --ac2: 0 207 255;
+  --tx: 231 236 245;
+  --mu: 138 147 168;
+  --gl: 0 230 118;
+  --bd: 39 48 74;
 }
 
-html, body {
+html,
+body {
   min-height: 100%;
-  background: #0b0f19;
-  color: #e7ecf5;
+  color: rgb(var(--tx));
+}
+
+/* Density: scale the rem base so the whole (rem-based) UI compacts uniformly. */
+html {
+  font-size: 16px;
+}
+html[data-density="compact"] {
+  font-size: 14.5px;
 }
 
 body {
   margin: 0;
+  font-family: var(--fb, ui-sans-serif), system-ui, sans-serif;
   font-feature-settings: "tnum" 1;
+  /* themed ambient glow (cheap, always-on; the canvas adds animated depth on
+     hover/fine-pointer devices) */
+  background:
+    radial-gradient(circle at 15% -5%, rgb(var(--gl) / 0.07), transparent 32%),
+    radial-gradient(circle at 85% 6%, rgb(var(--ac2) / 0.06), transparent 28%),
+    rgb(var(--bg));
+  background-attachment: fixed;
+  /* guard against accidental horizontal scroll; `clip` keeps the sticky header */
+  overflow-x: clip;
+  transition: background-color 0.3s ease;
 }
 
 * {
@@ -29,19 +56,54 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #0b0f19;
+  background: rgb(var(--bg));
 }
 ::-webkit-scrollbar-thumb {
-  background: #27304a;
+  background: rgb(var(--bd));
   border-radius: 9999px;
 }
 
+/* Touch devices: comfortable >=44px tap targets without changing desktop density. */
+@media (pointer: coarse) {
+  .btn {
+    min-height: 44px;
+  }
+  select,
+  textarea,
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]) {
+    min-height: 44px;
+  }
+}
+
 @layer components {
+  /* glassmorphism surface used by every dashboard panel */
   .panel {
-    @apply rounded-xl border border-line bg-panel shadow-lg shadow-black/30;
+    position: relative;
+    border-radius: 0.85rem;
+    border: 1px solid rgb(var(--bd) / 0.7);
+    background: color-mix(in srgb, rgb(var(--sur)) 72%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  }
+  /* 1px accent top-line */
+  .panel::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    border-radius: 0.85rem 0.85rem 0 0;
+    background: linear-gradient(90deg, transparent, rgb(var(--ac) / 0.85), transparent);
+    opacity: 0.7;
+    pointer-events: none;
+  }
+  .panel:hover {
+    border-color: rgb(var(--ac) / 0.4);
+    box-shadow: 0 12px 44px rgb(var(--gl) / 0.18), 0 10px 30px rgb(0 0 0 / 0.35);
   }
   .panel-head {
-    @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-muted;
+    @apply font-display text-[10px] font-semibold uppercase tracking-[0.16em] text-muted;
   }
   .chip {
     @apply rounded-full border border-line px-2 py-0.5 text-[10px] font-medium;
@@ -54,5 +116,39 @@ body {
   }
   .stat-value {
     @apply font-mono text-lg font-semibold;
+  }
+  /* translucent glass background without forcing position/rounding (for the
+     floating coach popover, which manages its own layout) */
+  .glass-surface {
+    background: color-mix(in srgb, rgb(var(--sur)) 82%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+}
+
+/* lighter blur on phones for smoothness */
+@media (pointer: coarse) {
+  .panel {
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+}
+
+/* Ambient 3D tilt — only active inside a stage that enables it (desktop, motion
+   allowed). The chart panel intentionally omits `.tilt3d` so candles stay flat. */
+[data-tilt="on"] .tilt3d {
+  transform: perspective(1100px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }

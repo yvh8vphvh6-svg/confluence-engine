@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from . import repository
-from .coach import CoachRequest, CoachResponse, coach as run_coach, assistant_health
-from .backtest import BacktestRequest, run_backtest, SESSION_PRESETS
-from .realchart import real_chart
+from .. import journal, progression
+from . import customstrats, repository
 from . import decision as decision_mod
+from .backtest import SESSION_PRESETS, BacktestRequest, run_backtest
+from .coach import CoachRequest, CoachResponse, assistant_health
+from .coach import coach as run_coach
 from .context import market_context
-from . import customstrats
-from .. import journal
+from .realchart import real_chart
 
 router = APIRouter(prefix="/api", tags=["data"])
 
@@ -80,10 +80,26 @@ def post_journal_session(s: journal.SessionIn) -> dict:
     return {"id": journal.add_session(s)}
 
 
+@router.post("/journal/missed-setup")
+def post_missed_setup(m: journal.MissedSetupIn) -> dict:
+    return {"id": journal.add_missed_setup(m)}
+
+
+@router.post("/journal/session-review")
+def post_session_review(s: journal.SessionReviewIn) -> dict:
+    return {"id": journal.add_session_review(s)}
+
+
 @router.delete("/journal")
 def delete_journal() -> dict:
     journal.clear()
+    progression.clear()
     return {"status": "cleared"}
+
+
+@router.get("/progression")
+def get_progression() -> dict:
+    return progression.summary()
 
 
 @router.post("/backtest")
@@ -91,7 +107,7 @@ def post_backtest(req: BacktestRequest) -> dict:
     try:
         return run_backtest(req)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/realchart")
@@ -105,7 +121,7 @@ def get_decision_new(difficulty: str = "beginner") -> dict:
     try:
         return decision_mod.new_scenario(difficulty).model_dump()
     except ValueError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/decision/score")
@@ -113,7 +129,7 @@ def post_decision_score(req: decision_mod.ScoreRequest) -> dict:
     try:
         return decision_mod.score(req)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/decision/stats")
@@ -133,7 +149,7 @@ def get_context(symbol: str = "MNQ", timeframe: str = "15m", seed: int = 42) -> 
     try:
         return market_context(symbol, timeframe, seed)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # --- custom strategies -------------------------------------------------------

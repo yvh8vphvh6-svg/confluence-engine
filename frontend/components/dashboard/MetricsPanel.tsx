@@ -2,15 +2,16 @@
 
 import { useStore } from "../../lib/store";
 import { usd, fmt, pctRaw, signColor } from "../../lib/format";
+import TiltCard from "../TiltCard";
 import ConfluenceGauge from "./ConfluenceGauge";
 import EquityCurve from "./EquityCurve";
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="rounded-lg border border-line bg-black/20 p-2.5">
+    <TiltCard className="p-2.5">
       <p className="text-[9px] uppercase tracking-wider text-muted">{label}</p>
       <p className={`mt-1 stat-value ${tone ?? "text-text"}`}>{value}</p>
-    </div>
+    </TiltCard>
   );
 }
 

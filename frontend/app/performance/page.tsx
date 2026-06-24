@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { getJournal, type JournalData, type JournalTrade } from "../../lib/api";
 import { fmt, pct, pctRaw, usd, signColor } from "../../lib/format";
+import CalibrationCard from "../../components/CalibrationCard";
 import EquityCurve from "../../components/dashboard/EquityCurve";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -95,6 +96,8 @@ export default function PerformancePage() {
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <Header />
+
+      <CalibrationCard calibration={data.calibration} />
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
         <Stat label="Trades" v={`${s.n}`} />
