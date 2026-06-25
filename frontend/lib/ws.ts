@@ -1,23 +1,28 @@
-import { apiBaseUrl } from "./api";
 import type { SimConfig } from "./store";
 
 const WS_PATH = "/api/simulation/stream";
 
-// WebSocket URL resolution mirrors apiBaseUrl():
-//  1. NEXT_PUBLIC_WS_URL (explicit override)
-//  2. dev: the local backend on :8000
-//  3. split-service deploy: the backend is at NEXT_PUBLIC_API_URL (https://…),
-//     so the socket must use wss:// — convert the http(s) base to ws(s) by
-//     swapping the leading scheme (https→wss, http→ws). A secure page cannot
-//     open a plain ws:// connection.
-//  4. single-service deploy: apiBaseUrl() is "" → derive from the page origin
-//     (wss:// on https, same host). window is only touched at connect-time.
+// WebSocket URL resolution:
+//  1. NEXT_PUBLIC_WS_URL — explicit full ws(s):// override.
+//  2. NEXT_PUBLIC_API_URL — the backend base (split deploy: Vercel → Render).
+//     Build the socket from THIS, swapping the scheme (https→wss, http→ws) and
+//     appending the socket path, e.g.
+//       https://confluence-engine.onrender.com
+//         → wss://confluence-engine.onrender.com/api/simulation/stream
+//     When this is set it MUST win — never derive the socket from the page host,
+//     or it points at the frontend's own (vercel.app) origin, which has no backend.
+//  3. dev: the local backend on :8000.
+//  4. single-service same-origin deploy (no API URL set): derive from the page
+//     origin (wss:// on https). window is only touched at connect-time (browser).
 function wsUrl(): string {
   const override = process.env.NEXT_PUBLIC_WS_URL;
   if (override) return override;
+  const api = process.env.NEXT_PUBLIC_API_URL;
+  if (api) {
+    const base = api.trim().replace(/\/+$/, "").replace(/^http/, "ws"); // https→wss, http→ws
+    return `${base}${WS_PATH}`;
+  }
   if (process.env.NODE_ENV === "development") return `ws://localhost:8000${WS_PATH}`;
-  const apiBase = apiBaseUrl(); // "" on a single-service same-origin deploy
-  if (apiBase) return `${apiBase.replace(/^http/, "ws")}${WS_PATH}`; // https→wss, http→ws
   if (typeof window !== "undefined") {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${proto}//${window.location.host}${WS_PATH}`;
