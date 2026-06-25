@@ -4,15 +4,32 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { logMissedSetup } from "../../lib/api";
 import { useSettings } from "../../lib/settings";
-import { useStore, type Direction, type PaperPosition } from "../../lib/store";
+import { useStore, type Direction, type PaperPosition, type StrategySignalView } from "../../lib/store";
 import type { EntryCtx, Prediction } from "../../lib/quality";
 import { useDiscipline } from "../../lib/useDiscipline";
-import { play } from "../../lib/stream";
+import { play, pause } from "../../lib/stream";
 import { fmt, usd, FACTOR_LABEL, REGIME_LABEL } from "../../lib/format";
 
 const FACTORS = ["base", "structure", "timing", "pa"];
 const RATIONALES = ["Setup quality", "Timing", "Risk", "Gut feeling"];
 type Predicted = "long" | "short" | "skip";
+
+// Why a tempting wrong strategy choice doesn't qualify on the current structure —
+// straight from the engine's per-strategy confluence evaluation (no fabrication).
+function whyNot(v: StrategySignalView | undefined, regime: string): string {
+  if (!v) return "no signal on this structure";
+  if (!v.active) return "not active on this structure";
+  if (v.blocked_by_regime) return `filtered out by the ${REGIME_LABEL[regime] ?? regime} regime`;
+  const c = v.confluence;
+  if (c && !c.execute) {
+    const miss = c.missing_factors?.length
+      ? ` (missing ${c.missing_factors.map((m) => FACTOR_LABEL[m] ?? m).join(", ")})`
+      : "";
+    return `confluence didn't clear${miss}`;
+  }
+  if (v.entry == null) return "no valid entry trigger here";
+  return v.reason || "lower confluence than the qualified setup";
+}
 
 export default function TeachCard() {
   const teach = useStore((s) => s.teach);
@@ -33,6 +50,7 @@ export default function TeachCard() {
 
   const [phase, setPhase] = useState<"predict" | "reveal">("reveal");
   const [predicted, setPredicted] = useState<Predicted | null>(null);
+  const [strategyPick, setStrategyPick] = useState<string | null>(null);
   const [confidence, setConfidence] = useState(5);
   const [decisionMs, setDecisionMs] = useState<number | null>(null);
   const [rationale, setRationale] = useState<string>("");
@@ -57,6 +75,7 @@ export default function TeachCard() {
       noteSetupSeen();
     }
     setPredicted(null);
+    setStrategyPick(null);
     setConfidence(5);
     setDecisionMs(null);
     setRationale("");
@@ -64,6 +83,10 @@ export default function TeachCard() {
       setPhase("predict");
       startRef.current = performance.now();
       setSecondsLeft(timerOn ? timerSecs : 0);
+      // freeze the stream while the user reads the formed setup (stays frozen
+      // through reveal until Take/Skip/Resume calls play()). Idempotent if the
+      // server already auto-paused.
+      pause();
     } else {
       setPhase("reveal");
     }
@@ -92,6 +115,15 @@ export default function TeachCard() {
   const threshold = sig?.confluence?.threshold ?? 0.65;
 
   const predictionMatch = predicted && predicted !== "skip" && sig ? predicted === sig.direction : null;
+
+  // strategy-recall question: choices are the engine's per-strategy reads; the
+  // "correct" answer is the strategy that actually has the qualifying confluence
+  // here (the qualified setup). Honest by construction — teach only fires when a
+  // setup genuinely qualifies, so we never invent a correct answer.
+  const strategyChoices = tick.signals.map((s) => ({ name: s.name, label: s.label }));
+  const correctStratLabel = sig?.label ?? teach.setup;
+  const strategyMatch = strategyPick && sig ? strategyPick === sig.name : null;
+  const pickedView = strategyPick ? tick.signals.find((s) => s.name === strategyPick) : undefined;
 
   const buildPrediction = (): Prediction | null => {
     if (!confidencePrompt || !predicted) return null;
@@ -185,9 +217,9 @@ export default function TeachCard() {
         <div className="flex items-center gap-2">
           <span className="grid h-7 w-7 place-items-center rounded-lg bg-warn/20 text-warn">⏸</span>
           <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-warn">Paused — qualified setup</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-warn">Paused — read the setup</p>
             <p className="text-sm font-semibold text-text">
-              {phase === "predict" ? "What do you see?" : sig ? sig.label : teach.setup}
+              {phase === "predict" ? "What's on the chart?" : sig ? sig.label : teach.setup}
             </p>
           </div>
         </div>
@@ -201,25 +233,30 @@ export default function TeachCard() {
         )}
       </div>
 
-      {/* ---------- PREDICTION STEP (setup details hidden) ---------- */}
+      {/* ---------- PREDICTION STEP: read the formed setup (system call hidden) ---------- */}
       {phase === "predict" ? (
         <div>
-          <div className="relative">
-            <div className="pointer-events-none select-none blur-md" aria-hidden="true">
-              <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                <Cell label="Entry" v="00000" />
-                <Cell label="Stop" v="00000" />
-                <Cell label="Target" v="00000" />
-                <Cell label="R:R" v="0:0" />
-              </div>
-              <p className="mt-3 text-xs text-text">why this qualifies — hidden until you commit a read.</p>
-            </div>
-            <div className="absolute inset-0 grid place-items-center">
-              <span className="chip border-line bg-surface2/70 text-muted">setup hidden — call it first</span>
-            </div>
+          <p className="text-xs text-text">
+            The chart is <span className="text-warn">frozen</span>. Read the setup that&apos;s already formed above —
+            structure, regime, and where price sits vs VWAP — then call it. The system&apos;s answer is hidden until you commit.
+          </p>
+
+          {/* (3) strategy recall — which setup applies on this structure */}
+          <p className="mt-3 text-[11px] uppercase tracking-wider text-muted">Which setup best applies here?</p>
+          <div className="mt-1 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+            {strategyChoices.map((c) => (
+              <button
+                key={c.name}
+                onClick={() => setStrategyPick(c.name)}
+                className={`chip justify-center ${strategyPick === c.name ? "border-neon/60 text-neon" : "border-line text-muted hover:text-text"}`}
+              >
+                {c.label}
+              </button>
+            ))}
           </div>
 
-          <p className="mt-3 text-[11px] uppercase tracking-wider text-muted">Your read</p>
+          {/* (2) direction read — graded against the engine's reasoning, not the next candle */}
+          <p className="mt-3 text-[11px] uppercase tracking-wider text-muted">Based on the confluence here — long or short?</p>
           <div className="mt-1 grid grid-cols-3 gap-2">
             {(["long", "short", "skip"] as Predicted[]).map((d) => (
               <button key={d} onClick={() => commit(d)} className={`btn justify-center ${directionTone(d)}`}>
@@ -235,7 +272,9 @@ export default function TeachCard() {
             </span>
             <input type="range" min={1} max={10} value={confidence} onChange={(e) => setConfidence(Number(e.target.value))} className="mt-1 w-full" />
           </label>
-          <p className="mt-2 text-[10px] text-muted">Commit a direction to reveal the setup and score your read. Practice only.</p>
+          <p className="mt-2 text-[10px] text-muted">
+            You&apos;re grading your read of the setup that&apos;s already there — not guessing the next candle. Commit a direction to reveal the engine&apos;s reasoning.
+          </p>
         </div>
       ) : sig ? (
         /* ---------- REVEAL + COMPARE + QUALITY ---------- */
@@ -250,6 +289,28 @@ export default function TeachCard() {
               )}
             </div>
           )}
+
+          {/* (3) strategy-recall result — why the qualified setup fits, why a wrong pick doesn't */}
+          {strategyPick && (
+            <div className={`mb-3 rounded-lg border px-3 py-2 text-xs ${strategyMatch ? "border-profit/50 bg-profit/5" : "border-loss/50 bg-loss/5"}`}>
+              You picked <span className="font-semibold text-text">{pickedView?.label ?? strategyPick}</span> · engine qualified{" "}
+              <span className="font-semibold text-text">{correctStratLabel}</span>{strategyMatch ? " — match ✓" : " — mismatch ✗"}
+              <p className="mt-1 text-muted">
+                {correctStratLabel} fits — {REGIME_LABEL[tick.regime] ?? tick.regime} regime, {factorsPresent}/{FACTORS.length} factors; {sig.evidence || sig.reason}.
+                {!strategyMatch && <> Not {pickedView?.label ?? strategyPick}: {whyNot(pickedView, tick.regime)}.</>}
+              </p>
+            </div>
+          )}
+
+          {/* (2) engine reasoning for the direction — read, not noise */}
+          <div className="mb-3 rounded-lg border border-line bg-surface2/40 px-3 py-2 text-xs">
+            <p className="text-[10px] uppercase tracking-wider text-muted">Engine reasoning</p>
+            <p className="mt-1 text-text">
+              Reads <span className={`font-semibold ${directionTone(sig.direction)}`}>{sig.direction.toUpperCase()}</span> —{" "}
+              {REGIME_LABEL[tick.regime] ?? tick.regime} regime, {factorsPresent}/{FACTORS.length} confluence factors. {sig.evidence}
+            </p>
+            <p className="mt-1 text-[10px] text-muted">Graded on the engine&apos;s confluence read of the formed setup — not the next candle; this sharpens on realistic data.</p>
+          </div>
 
           <div className="grid grid-cols-4 gap-2 text-center text-xs">
             <Cell label="Entry" v={fmt(sig.entry)} tone="text-warn" />
