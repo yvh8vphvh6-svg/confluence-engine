@@ -17,13 +17,20 @@ load_dotenv(REPO_ROOT / ".env", override=False)
 
 
 def _default_cors_origins() -> list[str]:
-    """Local dev origins, plus any FRONTEND_ORIGIN(s) from the host env.
+    """Local dev origins + the production Vercel frontend, plus any
+    FRONTEND_ORIGIN(s) from the host env.
 
     Single-service deploys serve the frontend same-origin, so CORS is never
-    exercised and this stays at the defaults. Set FRONTEND_ORIGIN (comma-
-    separated allowed) only when hosting the frontend on a different origin.
+    exercised. The split deploy (Vercel frontend → Render backend) IS cross-
+    origin with credentials, so the production origin is listed explicitly here
+    (never "*", which is invalid with allow_credentials). Set FRONTEND_ORIGIN
+    (comma-separated) to allow additional origins, e.g. preview deploys.
     """
-    origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://confluence-engine-frontend-4p0kraz31-mnq1.vercel.app",
+    ]
     extra = os.environ.get("FRONTEND_ORIGIN", "").strip()
     if extra:
         origins.extend(o.strip().rstrip("/") for o in extra.split(",") if o.strip())
