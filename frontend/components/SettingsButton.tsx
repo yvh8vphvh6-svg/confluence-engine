@@ -404,6 +404,27 @@ export default function SettingsButton() {
                   </Row>
                 </Section>
 
+                <Section title="Discipline">
+                  <Row label="Emotional check-ins" hint="Pre-session mood + post-trade feeling">
+                    <Toggle label="Emotional check-ins" checked={settings.emotionalCheckins} onChange={(v) => set("emotionalCheckins", v)} />
+                  </Row>
+                  <Row label="Tilt warning (consecutive losses)" hint="Suggest a break after N losses">
+                    <input type="number" min={1} max={20} step={1} value={settings.tiltThresholdLosses}
+                      onChange={(e) => set("tiltThresholdLosses", Math.max(1, Math.round(Number(e.target.value) || 3)))} className={numberInputClass} />
+                  </Row>
+                  <Row label="Cooldown length (minutes)" hint="Suggested step-away timer">
+                    <input type="number" min={1} max={60} step={1} value={settings.cooldownMinutes}
+                      onChange={(e) => set("cooldownMinutes", Math.max(1, Math.round(Number(e.target.value) || 5)))} className={numberInputClass} />
+                  </Row>
+                  <Row label="Max daily loss (R)" hint="Hard stop — ends the session">
+                    <input type="number" min={0} step={0.5} value={settings.maxDailyLossR}
+                      onChange={(e) => set("maxDailyLossR", Math.max(0, Number(e.target.value) || 0))} className={numberInputClass} />
+                  </Row>
+                  <Row label="Revenge-trade guard" hint="Confirm before a post-tilt entry">
+                    <Toggle label="Revenge-trade guard" checked={settings.revengeGuard} onChange={(v) => set("revengeGuard", v)} />
+                  </Row>
+                </Section>
+
                 <Section title="Learning">
                   <p className="text-[11px] text-muted">Saved now — these activate when their phases ship.</p>
                   <Row label="Confidence prompt before a setup">

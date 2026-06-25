@@ -6,6 +6,7 @@ import { logPaperTrade, MISTAKE_TAGS } from "../../lib/api";
 import { useSettings } from "../../lib/settings";
 import { tradeLogPayload, useStore, type Direction, type PaperPosition } from "../../lib/store";
 import { useBestSetup } from "../../lib/useBestSetup";
+import { useDiscipline } from "../../lib/useDiscipline";
 import { fmt, usd, signColor } from "../../lib/format";
 
 function roundTick(v: number, tick: number): number {
@@ -21,7 +22,9 @@ export default function TradePanel() {
   const balance = useStore((s) => s.paperBalance);
   const takePaper = useStore((s) => s.takePaper);
   const closePaper = useStore((s) => s.closePaper);
+  const pendingOverride = useStore((s) => s.pendingRevengeOverride);
   const best = useBestSetup();
+  const gate = useDiscipline();
 
   const pv = meta?.instrument.point_value ?? 1;
   const tickSize = meta?.instrument.tick_size ?? 0.25;
@@ -58,10 +61,10 @@ export default function TradePanel() {
     setSize(Number(suggestedSize.toFixed(2)));
   }, [suggestedSize, touched]);
 
-  const valid = Boolean(tick) && stopPts > 0 && tpPts > 0 && size > 0;
+  const valid = Boolean(tick) && stopPts > 0 && tpPts > 0 && size > 0 && gate.canTake;
 
   const place = (direction: Direction) => {
-    if (!tick || stopPts <= 0 || tpPts <= 0 || size <= 0) return;
+    if (!tick || stopPts <= 0 || tpPts <= 0 || size <= 0 || !gate.canTake) return;
     const entry = roundTick(price, tickSize);
     const stop = direction === "long" ? entry - stopPts : entry + stopPts;
     const target = direction === "long" ? entry + tpPts : entry - tpPts;
@@ -80,6 +83,8 @@ export default function TradePanel() {
       regime: tick.regime,
       // manual order: no prediction; grade quality against the live confluence
       prediction: null,
+      wasPostTilt: pendingOverride || gate.consecutiveLosses >= gate.threshold,
+      wasRevengeOverride: pendingOverride,
       entryCtx: {
         confluence: tick.confluence?.confidence ?? 0.6,
         threshold: tick.confluence?.threshold ?? 0.65,
@@ -119,6 +124,7 @@ export default function TradePanel() {
     const t = closePaper(price, "manual", tick.ohlc.time.toString(), tick.bar_index);
     if (t)
       logPaperTrade(tradeLogPayload(t, tick.symbol, tick.timeframe, { emotion: closeEmotion, mistakes: closeMistakes }))
+        .then((r) => useStore.getState().setLastClosedId(r.id))
         .catch(() => undefined);
     setCloseMistakes([]); setCloseEmotion("disciplined");
   };
@@ -211,6 +217,13 @@ export default function TradePanel() {
             Market fill ≈ {fmt(price)}. Risk/contract {usd.format(riskPerContract)} ·
             {(riskFraction * 100).toFixed(2)}%-risk size ≈ {fmt(suggestedSize, 2)} ct · R:R {stopPts > 0 ? (tpPts / stopPts).toFixed(1) : "—"}:1
           </p>
+          {!gate.canTake && (
+            <p className="rounded-lg border border-warn/40 bg-warn/5 px-2 py-1.5 text-[11px] text-warn">
+              {gate.lockedOut
+                ? "Entries locked — daily loss limit hit for this session. Review and start fresh."
+                : "Entries paused during your cooldown — observe only (or use “Take anyway” above)."}
+            </p>
+          )}
           <div className="flex gap-2">
             <button
               onClick={() => place("long")}

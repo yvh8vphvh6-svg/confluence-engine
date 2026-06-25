@@ -36,7 +36,10 @@ export default function ManualController() {
     }
     if (exit == null) return;
     const t = closePaper(exit, reason, tick.ohlc.time.toString(), tick.bar_index);
-    if (t) logPaperTrade(tradeLogPayload(t, tick.symbol, tick.timeframe)).catch(() => undefined);
+    if (t)
+      logPaperTrade(tradeLogPayload(t, tick.symbol, tick.timeframe))
+        .then((r) => useStore.getState().setLastClosedId(r.id))
+        .catch(() => undefined);
   }, [tick]);
 
   return null;

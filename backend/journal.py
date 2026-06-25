@@ -59,6 +59,15 @@ CREATE TABLE IF NOT EXISTS session_reviews (
     skipped_qualified INTEGER, missed_r REAL, avg_quality REAL,
     calibration TEXT, focuses TEXT, reason TEXT
 );
+CREATE TABLE IF NOT EXISTS cooldown_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    type TEXT NOT NULL,          -- 'tilt' | 'max_loss'
+    started_at TEXT,
+    length_min INTEGER,
+    ended_early INTEGER,         -- nullable bool: 1 = ended early, 0 = ran full
+    session_id INTEGER
+);
 """
 
 # Columns added after the original paper_trades schema shipped; applied via
@@ -77,6 +86,16 @@ _TRADE_MIGRATIONS: dict[str, str] = {
     "quality_total": "REAL",
     "won_lost_factors": "TEXT",
     "snapshot": "TEXT",  # pattern-library: JSON bar-window + overlays captured at trade time
+    # discipline layer (all nullable so deployed DBs upgrade cleanly)
+    "post_trade_feeling": "TEXT",      # "good" | "neutral" | "bad"
+    "was_post_tilt": "INTEGER",         # 1 = taken while a tilt warning was active
+    "was_revenge_override": "INTEGER",  # 1 = taken by overriding a tilt cooldown
+    "pre_emotional_state": "TEXT",      # denormalized session check-in, for correlation
+}
+
+# sessions predate the discipline layer; add its column idempotently on connect.
+_SESSION_MIGRATIONS: dict[str, str] = {
+    "pre_emotional_state": "TEXT",
 }
 
 # canonical mistake tags surfaced in the UI
@@ -129,6 +148,11 @@ class PaperTradeIn(BaseModel):
     quality: QualityIn | None = None
     won_lost_factors: list[WonLostFactor] = Field(default_factory=list)
     snapshot: dict[str, Any] | None = None  # pattern-library bar-window + overlays
+    # discipline layer (all optional / nullable)
+    post_trade_feeling: str = ""
+    was_post_tilt: bool | None = None
+    was_revenge_override: bool | None = None
+    pre_emotional_state: str = ""
 
 
 class NoteIn(BaseModel):
@@ -142,6 +166,7 @@ class SessionIn(BaseModel):
     confidence: int = 3
     goals: str = ""
     notes: str = ""
+    pre_emotional_state: str = ""  # pre-session check-in: Focused/Frustrated/Tired/Excited
 
 
 class MissedSetupIn(BaseModel):
@@ -173,6 +198,14 @@ class SessionReviewIn(BaseModel):
     reason: str = "manual"
 
 
+class CooldownEventIn(BaseModel):
+    type: str = "tilt"  # "tilt" | "max_loss"
+    started_at: str = ""
+    length_min: int = 0
+    ended_early: bool | None = None
+    session_id: int | None = None
+
+
 def ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
     """Idempotently add any missing columns. Checks PRAGMA table_info first AND
     tolerates a duplicate-column race, so it's safe to run on every connect
@@ -195,6 +228,7 @@ def _conn() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     ensure_columns(conn, "paper_trades", _TRADE_MIGRATIONS)
+    ensure_columns(conn, "sessions", _SESSION_MIGRATIONS)
     return conn
 
 
@@ -208,8 +242,9 @@ def add_trade(t: PaperTradeIn) -> int:
                 pnl_dollars, exit_reason, opened_at, closed_at, note, emotion, mistakes,
                 predicted_direction, prediction_correct, confidence, decision_ms,
                 take_skip_rationale, quality_setup, quality_risk, quality_execution,
-                quality_outcome, quality_total, won_lost_factors, snapshot)
-               VALUES (datetime('now'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                quality_outcome, quality_total, won_lost_factors, snapshot,
+                post_trade_feeling, was_post_tilt, was_revenge_override, pre_emotional_state)
+               VALUES (datetime('now'),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (t.symbol, t.timeframe, t.strategy, t.direction, t.regime,
              t.entry_price, t.exit_price, t.stop, t.target, t.contracts, t.r_multiple,
              t.pnl_dollars, t.exit_reason, t.opened_at, t.closed_at, t.note, t.emotion,
@@ -220,9 +255,21 @@ def add_trade(t: PaperTradeIn) -> int:
              q.setup if q else None, q.risk if q else None, q.execution if q else None,
              q.outcome if q else None, q.total if q else None,
              json.dumps([f.model_dump() for f in t.won_lost_factors]),
-             json.dumps(t.snapshot) if t.snapshot is not None else None))
+             json.dumps(t.snapshot) if t.snapshot is not None else None,
+             t.post_trade_feeling or None,
+             None if t.was_post_tilt is None else int(t.was_post_tilt),
+             None if t.was_revenge_override is None else int(t.was_revenge_override),
+             t.pre_emotional_state or None))
         c.commit()
         return int(cur.lastrowid or 0)
+
+
+def set_trade_feeling(trade_id: int, feeling: str) -> None:
+    """Attach an optional post-trade micro check-in to an already-logged trade.
+    Idempotent: re-tapping just overwrites the same row's column."""
+    with _conn() as c:
+        c.execute("UPDATE paper_trades SET post_trade_feeling = ? WHERE id = ?", (feeling, trade_id))
+        c.commit()
 
 
 def add_note(n: NoteIn) -> int:
@@ -237,8 +284,21 @@ def add_note(n: NoteIn) -> int:
 def add_session(s: SessionIn) -> int:
     with _conn() as c:
         cur = c.execute(
-            "INSERT INTO sessions (created_at, mood, confidence, goals, notes) VALUES (datetime('now'),?,?,?,?)",
-            (s.mood, s.confidence, s.goals, s.notes))
+            "INSERT INTO sessions (created_at, mood, confidence, goals, notes, pre_emotional_state) "
+            "VALUES (datetime('now'),?,?,?,?,?)",
+            (s.mood, s.confidence, s.goals, s.notes, s.pre_emotional_state))
+        c.commit()
+        return int(cur.lastrowid or 0)
+
+
+def add_cooldown_event(e: CooldownEventIn) -> int:
+    with _conn() as c:
+        cur = c.execute(
+            """INSERT INTO cooldown_events
+               (created_at, type, started_at, length_min, ended_early, session_id)
+               VALUES (datetime('now'),?,?,?,?,?)""",
+            (e.type, e.started_at, e.length_min,
+             None if e.ended_early is None else int(e.ended_early), e.session_id))
         c.commit()
         return int(cur.lastrowid or 0)
 
@@ -277,6 +337,7 @@ def clear() -> None:
         c.execute("DELETE FROM sessions")
         c.execute("DELETE FROM missed_setups")
         c.execute("DELETE FROM session_reviews")
+        c.execute("DELETE FROM cooldown_events")
         c.commit()
 
 
@@ -468,6 +529,58 @@ def weekly_review(trades: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(reversed(out))
 
 
+# --- discipline correlations (deterministic, real logs; sample-gated) ---------
+# Each bucket needs >=10 trades to be shown; the whole view is flagged provisional
+# under ~30 — mirrors the calibration honesty rules. Nothing is invented: a bucket
+# with too few trades is returned but marked not-shown ("insufficient data").
+_CORR_MIN_N = 10
+_SPEED_BANDS: list[tuple[str, int, int]] = [("<5s", 0, 5000), ("5-10s", 5000, 10000), (">10s", 10000, 1_000_000_000)]
+
+
+def _corr_buckets(groups: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Win rate / expectancy per group, gated at _CORR_MIN_N trades per bucket."""
+    total = sum(len(v) for v in groups.values())
+    buckets: list[dict[str, Any]] = []
+    for key, rows in groups.items():
+        n = len(rows)
+        rs = [t.get("r_multiple") or 0.0 for t in rows]
+        won = sum(1 for r in rs if r > 0)
+        buckets.append({
+            "key": key, "n": n, "won": won,
+            "win_rate": round(won / n, 4) if n else None,
+            "expectancy_r": round(sum(rs) / n, 4) if n else None,
+            "shown": n >= _CORR_MIN_N,
+        })
+    return {"available": any(b["shown"] for b in buckets), "provisional": total < 30,
+            "n": total, "min_n": _CORR_MIN_N, "buckets": buckets}
+
+
+def emotion_correlation(trades: list[dict[str, Any]]) -> dict[str, Any]:
+    """Win rate / expectancy bucketed by the pre-session emotional state recorded
+    on each trade (denormalized at trade time)."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for t in trades:
+        state = (t.get("pre_emotional_state") or "").strip()
+        if state:
+            groups.setdefault(state, []).append(t)
+    return _corr_buckets(groups)
+
+
+def decision_speed(trades: list[dict[str, Any]]) -> dict[str, Any]:
+    """Win rate / expectancy bucketed by how long the pre-trade read took
+    (decision_ms). Observed correlation, not advice."""
+    groups: dict[str, list[dict[str, Any]]] = {label: [] for label, _, _ in _SPEED_BANDS}
+    for t in trades:
+        ms = t.get("decision_ms")
+        if ms is None:
+            continue
+        for label, lo, hi in _SPEED_BANDS:
+            if lo <= int(ms) < hi:
+                groups[label].append(t)
+                break
+    return _corr_buckets(groups)
+
+
 def fetch_all() -> dict[str, Any]:
     with _conn() as c:
         trades = [dict(r) for r in c.execute("SELECT * FROM paper_trades ORDER BY id DESC").fetchall()]
@@ -475,6 +588,7 @@ def fetch_all() -> dict[str, Any]:
         sessions = [dict(r) for r in c.execute("SELECT * FROM sessions ORDER BY id DESC").fetchall()]
         missed = [dict(r) for r in c.execute("SELECT * FROM missed_setups ORDER BY id DESC").fetchall()]
         reviews_raw = [dict(r) for r in c.execute("SELECT * FROM session_reviews ORDER BY id DESC").fetchall()]
+        cooldowns = [dict(r) for r in c.execute("SELECT * FROM cooldown_events ORDER BY id DESC").fetchall()]
     # decode JSON columns back into structures for the client
     for t in trades:
         t["won_lost_factors"] = json.loads(t.get("won_lost_factors") or "[]")
@@ -486,5 +600,8 @@ def fetch_all() -> dict[str, Any]:
         reviews.append(r)
     return {"trades": trades, "notes": notes, "sessions": sessions,
             "missed_setups": missed, "session_reviews": reviews,
+            "cooldown_events": cooldowns,
             "stats": _stats(trades), "weekly": weekly_review(trades),
-            "calibration": calibration(trades)}
+            "calibration": calibration(trades),
+            "emotion_correlation": emotion_correlation(trades),
+            "decision_speed": decision_speed(trades)}

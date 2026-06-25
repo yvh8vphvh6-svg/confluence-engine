@@ -157,6 +157,11 @@ export type JournalTrade = {
   quality_total: number | null;
   won_lost_factors: { label: string; score: number; note: string }[];
   snapshot: TradeSnapshot | null;
+  // discipline layer (nullable for legacy rows)
+  post_trade_feeling: string | null;
+  was_post_tilt: number | null;
+  was_revenge_override: number | null;
+  pre_emotional_state: string | null;
 };
 
 export type JournalNote = {
@@ -174,6 +179,34 @@ export type JournalSession = {
   confidence: number;
   goals: string;
   notes: string;
+  pre_emotional_state: string | null;
+};
+
+export type CooldownEvent = {
+  id: number;
+  created_at: string;
+  type: string;
+  started_at: string;
+  length_min: number;
+  ended_early: number | null;
+  session_id: number | null;
+};
+
+// win rate / expectancy bucketed by a key (emotional state, decision-speed band)
+export type CorrelationBucket = {
+  key: string;
+  n: number;
+  won: number;
+  win_rate: number | null;
+  expectancy_r: number | null;
+  shown: boolean;
+};
+export type Correlation = {
+  available: boolean;
+  provisional: boolean;
+  n: number;
+  min_n: number;
+  buckets: CorrelationBucket[];
 };
 
 export type JournalStats = {
@@ -264,12 +297,19 @@ export type JournalData = {
   sessions: JournalSession[];
   missed_setups: MissedSetup[];
   session_reviews: SessionReviewRow[];
+  cooldown_events: CooldownEvent[];
   stats: JournalStats;
   weekly: WeeklyReview[];
   calibration: Calibration;
+  emotion_correlation: Correlation;
+  decision_speed: Correlation;
 };
 
 export const getJournal = (s?: AbortSignal) => getJson<JournalData>("/api/journal", s);
+export const logCooldownEvent = (e: Record<string, unknown>) =>
+  postJson<{ id: number }>("/api/journal/cooldown", e);
+export const setTradeFeeling = (id: number, feeling: string) =>
+  postJson<{ status: string }>("/api/journal/trade/feeling", { id, feeling });
 
 // --- progression / engagement ---
 export type XpLedgerRow = { event: string; count: number; xp_each: number; xp: number };

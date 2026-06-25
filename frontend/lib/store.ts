@@ -8,6 +8,7 @@ import {
   type QualityScores,
   type WonLostFactor,
 } from "./quality";
+import { useSettings } from "./settings";
 
 export type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 export type StreamState = "idle" | "building" | "ready" | "error";
@@ -206,6 +207,9 @@ export type PaperPosition = {
   prediction: Prediction | null;
   entryCtx: EntryCtx | null;
   snapshot: TradeSnapshot | null;
+  // discipline context (captured at entry)
+  wasPostTilt?: boolean;
+  wasRevengeOverride?: boolean;
 };
 
 // pattern-library snapshot: the bar window + trade levels captured at entry so
@@ -239,6 +243,11 @@ export type PaperTrade = {
   quality: QualityScores | null;
   wonLostFactors: WonLostFactor[];
   snapshot: TradeSnapshot | null;
+  // discipline fields
+  wasPostTilt: boolean;
+  wasRevengeOverride: boolean;
+  preEmotionalState: string;
+  postTradeFeeling: string;
 };
 
 // live counters for the current practice session (powers the session review)
@@ -252,6 +261,8 @@ export type SessionStats = {
   missedR: number;
   qualitySum: number;
   qualityCount: number;
+  lossStreak: number; // consecutive losing paper trades (tilt signal)
+  rSum: number; // cumulative R this session (max-daily-loss signal)
 };
 
 export type OverlayToggles = Record<OverlayKind, boolean>;
@@ -298,7 +309,14 @@ type Store = {
   paperTrades: PaperTrade[];
   skippedKey: string | null;
   lastClosed: PaperTrade | null; // drives the post-trade card
+  lastClosedId: number | null; // backend id of the logged trade (for the feeling update)
   session: SessionStats;
+  // discipline layer (live, per-session)
+  preEmotionalState: string | null;
+  preSessionAnswered: boolean;
+  tiltCooldownUntil: number; // ms epoch; 0 = no active cooldown
+  lockedOut: boolean; // max daily loss hit this session
+  pendingRevengeOverride: boolean; // armed by "Take anyway" during a cooldown
   setLearnOpen: (open: boolean) => void;
   setTourOpen: (open: boolean) => void;
   setTeach: (t: Teach | null) => void;
@@ -321,6 +339,14 @@ type Store = {
   noteSkippedQualified: (rPotential: number) => void;
   dismissPostTrade: () => void;
   resetSession: () => void;
+  // discipline actions
+  setPreEmotionalState: (state: string) => void;
+  dismissPreSession: () => void;
+  startTiltCooldown: (minutes: number) => void;
+  endTiltCooldown: () => void;
+  armRevengeOverride: () => void;
+  setLastClosedId: (id: number | null) => void;
+  setLastClosedFeeling: (feeling: string) => void;
 };
 
 // Maps a closed paper trade (with prediction + quality) to the backend
@@ -359,6 +385,10 @@ export function tradeLogPayload(
       : null,
     won_lost_factors: t.wonLostFactors,
     snapshot: t.snapshot,
+    post_trade_feeling: t.postTradeFeeling ?? "",
+    was_post_tilt: t.wasPostTilt,
+    was_revenge_override: t.wasRevengeOverride,
+    pre_emotional_state: t.preEmotionalState ?? "",
   };
 }
 
@@ -372,6 +402,8 @@ const FRESH_SESSION = (startedAt: number): SessionStats => ({
   missedR: 0,
   qualitySum: 0,
   qualityCount: 0,
+  lossStreak: 0,
+  rSum: 0,
 });
 
 function pointValue(meta: StreamMeta | null): number {
@@ -406,7 +438,13 @@ export const useStore = create<Store>((set) => ({
   paperTrades: [],
   skippedKey: null,
   lastClosed: null,
+  lastClosedId: null,
   session: FRESH_SESSION(Date.now()),
+  preEmotionalState: null,
+  preSessionAnswered: false,
+  tiltCooldownUntil: 0,
+  lockedOut: false,
+  pendingRevengeOverride: false,
   setLearnOpen: (learnOpen) => set({ learnOpen }),
   setTourOpen: (tourOpen) => set({ tourOpen }),
   setTeach: (teach) => set({ teach }),
@@ -435,7 +473,7 @@ export const useStore = create<Store>((set) => ({
   openInspector: (inspector) => set({ inspector }),
   setManualMode: (manualMode) => set({ manualMode }),
   takePaper: (paperPosition) =>
-    set((s) => ({ paperPosition, skippedKey: null, session: { ...s.session, taken: s.session.taken + 1 } })),
+    set((s) => ({ paperPosition, skippedKey: null, pendingRevengeOverride: false, session: { ...s.session, taken: s.session.taken + 1 } })),
   skipSetup: (skippedKey) => set({ skippedKey }),
   closePaper: (exit, reason, closedAt, bar) => {
     const s = useStore.getState();
@@ -478,18 +516,31 @@ export const useStore = create<Store>((set) => ({
       quality,
       wonLostFactors,
       snapshot: p.snapshot,
+      wasPostTilt: Boolean(p.wasPostTilt),
+      wasRevengeOverride: Boolean(p.wasRevengeOverride),
+      preEmotionalState: s.preEmotionalState ?? "",
+      postTradeFeeling: "",
     };
+    // discipline accounting from the user's OWN paper trades (not the engine sim)
+    const lossStreak = rMultiple > 0 ? 0 : s.session.lossStreak + 1;
+    const rSum = Number((s.session.rSum + rMultiple).toFixed(4));
+    const maxLossR = useSettings.getState().settings.maxDailyLossR;
+    const lockedOut = s.lockedOut || (maxLossR > 0 && rSum <= -maxLossR);
     set({
       paperPosition: null,
       paperBalance: Number((s.paperBalance + pnl).toFixed(2)),
       paperTrades: [...s.paperTrades, trade],
       lastClosed: trade,
+      lastClosedId: null,
+      lockedOut,
       session: {
         ...s.session,
         wins: s.session.wins + (rMultiple > 0 ? 1 : 0),
         losses: s.session.losses + (rMultiple < 0 ? 1 : 0),
         qualitySum: s.session.qualitySum + quality.total,
         qualityCount: s.session.qualityCount + 1,
+        lossStreak,
+        rSum,
       },
     });
     return trade;
@@ -500,7 +551,13 @@ export const useStore = create<Store>((set) => ({
       paperPosition: null,
       paperTrades: [],
       lastClosed: null,
+      lastClosedId: null,
       session: FRESH_SESSION(Date.now()),
+      preEmotionalState: null,
+      preSessionAnswered: false,
+      tiltCooldownUntil: 0,
+      lockedOut: false,
+      pendingRevengeOverride: false,
     })),
   noteSetupSeen: () => set((s) => ({ session: { ...s.session, setupsSeen: s.session.setupsSeen + 1 } })),
   noteSkippedQualified: (rPotential) =>
@@ -512,5 +569,25 @@ export const useStore = create<Store>((set) => ({
       },
     })),
   dismissPostTrade: () => set({ lastClosed: null }),
-  resetSession: () => set({ session: FRESH_SESSION(Date.now()) }),
+  resetSession: () =>
+    set({
+      session: FRESH_SESSION(Date.now()),
+      preEmotionalState: null,
+      preSessionAnswered: false,
+      tiltCooldownUntil: 0,
+      lockedOut: false,
+      pendingRevengeOverride: false,
+    }),
+  // --- discipline ---
+  setPreEmotionalState: (state) => set({ preEmotionalState: state, preSessionAnswered: true }),
+  dismissPreSession: () => set({ preSessionAnswered: true }),
+  startTiltCooldown: (minutes) => set({ tiltCooldownUntil: Date.now() + Math.max(1, minutes) * 60_000 }),
+  // ending a cooldown clears the loss streak so the same warning doesn't re-fire immediately
+  endTiltCooldown: () => set((s) => ({ tiltCooldownUntil: 0, session: { ...s.session, lossStreak: 0 } })),
+  // "Take anyway": end the cooldown, arm the override flag for the next entry
+  armRevengeOverride: () =>
+    set((s) => ({ tiltCooldownUntil: 0, pendingRevengeOverride: true, session: { ...s.session, lossStreak: 0 } })),
+  setLastClosedId: (lastClosedId) => set({ lastClosedId }),
+  setLastClosedFeeling: (feeling) =>
+    set((s) => ({ lastClosed: s.lastClosed ? { ...s.lastClosed, postTradeFeeling: feeling } : null })),
 }));

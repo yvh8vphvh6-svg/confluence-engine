@@ -100,6 +100,15 @@ export function computeTraderProfile(
       ])
     : 0;
 
+  // sharpest pre-session state by win rate (only when a bucket clears the gate)
+  const bestState =
+    journal && journal.emotion_correlation.available
+      ? journal.emotion_correlation.buckets
+          .filter((b) => b.shown)
+          .slice()
+          .sort((a, b) => (b.win_rate ?? 0) - (a.win_rate ?? 0))[0]?.key ?? "—"
+      : "—";
+
   const tiles: StatTile[] = [
     { label: "Setups taken", value: String(n) },
     { label: "Win rate", value: journal && n > 0 ? pct(journal.stats.win_rate) : "—" },
@@ -107,6 +116,7 @@ export function computeTraderProfile(
     { label: "Day streak", value: streak > 0 ? `${streak}d` : "—" },
     { label: "Best regime", value: journal ? bestRegime(journal) : "—" },
     { label: "Discipline", value: journal ? disciplineGrade(journal) : "—" },
+    { label: "Sharpest when", value: bestState },
   ];
 
   return {

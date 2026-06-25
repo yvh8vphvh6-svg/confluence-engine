@@ -37,6 +37,11 @@ export type Settings = {
   decisionTimerEnabled: boolean;
   decisionTimerSeconds: number;
   dailyChallengeReminders: boolean;
+  // discipline
+  emotionalCheckins: boolean;
+  tiltThresholdLosses: number;
+  cooldownMinutes: number;
+  revengeGuard: boolean;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -59,8 +64,12 @@ export const DEFAULT_SETTINGS: Settings = {
   coachVerbosity: "normal",
   confidencePrompt: false,
   decisionTimerEnabled: false,
-  decisionTimerSeconds: 20,
+  decisionTimerSeconds: 15,
   dailyChallengeReminders: false,
+  emotionalCheckins: true,
+  tiltThresholdLosses: 3,
+  cooldownMinutes: 5,
+  revengeGuard: true,
 };
 
 export const SETTINGS_STORAGE_KEY = "ce_settings_v1";

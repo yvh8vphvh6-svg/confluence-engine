@@ -21,6 +21,8 @@ import ManualController from "../components/dashboard/ManualController";
 import TeachCard from "../components/dashboard/TeachCard";
 import PostTradeCard from "../components/dashboard/PostTradeCard";
 import SessionReview from "../components/dashboard/SessionReview";
+import PreSessionCheckin from "../components/dashboard/PreSessionCheckin";
+import DisciplineBanner from "../components/dashboard/DisciplineBanner";
 import ChallengesCard from "../components/dashboard/ChallengesCard";
 import BadgeToaster from "../components/BadgeToaster";
 import Tour from "../components/Tour";
@@ -120,6 +122,8 @@ export default function PracticePage() {
         </aside>
 
         <section className="min-w-0 space-y-4">
+          <PreSessionCheckin />
+          <DisciplineBanner />
           {teach && <TeachCard />}
           <ChallengesCard />
           <div className="panel min-w-0 overflow-hidden" data-tour="chart">

@@ -35,11 +35,15 @@ XP_SESSION_REVIEW = 15      # completed a session review (reflection)
 XP_CALIBRATED_BONUS = 20    # aggregate: confidence is well-calibrated (>=30 graded)
 XP_CHALLENGE_COMPLETE = 25  # completed a daily challenge
 
+XP_TILT_COOLDOWN_TAKEN = 8  # took (and completed) a suggested tilt cooldown — discipline
+XP_CLEAN_DAILY_STOP = 12    # hit the daily limit and stopped cleanly (the rule that protects accounts)
+
 XP_OVERSIZED = -8           # sized past the configured risk % (quality.risk < 6)
 XP_SKIPPED_QUALIFIED = -4   # skipped a qualified setup (logged missed practice)
 XP_OFF_PLAN = -5            # "off-plan" mistake — ignored the plan / regime filter
 XP_TILT = -3                # revenge / FOMO / traded-news mistake
-XP_DAILY_STOP_BREACH = -15  # hit max daily loss (session review reason=daily_stop)
+XP_DAILY_STOP_BREACH = -15  # hit max daily loss (session review reason=daily_stop) — the loss itself
+XP_REVENGE_OVERRIDE = -10   # overrode a tilt cooldown to force a post-tilt entry (anti-pattern)
 
 _TILT_TAGS = {"revenge", "FOMO", "traded news"}
 
@@ -92,6 +96,7 @@ def xp_ledger(data: dict[str, Any], completed_challenges: int = 0) -> list[dict[
     missed: list[dict[str, Any]] = data["missed_setups"]
     reviews: list[dict[str, Any]] = data["session_reviews"]
     calib: dict[str, Any] = data["calibration"]
+    cooldowns: list[dict[str, Any]] = data.get("cooldown_events", [])
 
     rows: list[dict[str, Any]] = []
 
@@ -117,12 +122,19 @@ def xp_ledger(data: dict[str, Any], completed_challenges: int = 0) -> list[dict[
         if active and all(abs(b["expected"] - (b["win_rate"] or 0)) <= 0.10 for b in active):
             add("Well-calibrated confidence", 1, XP_CALIBRATED_BONUS)
 
+    # discipline rewards (derived from the cooldown_events log; each row counts once)
+    tilt_taken = sum(1 for e in cooldowns if e.get("type") == "tilt" and e.get("ended_early") != 1)
+    add("Took a suggested cooldown", tilt_taken, XP_TILT_COOLDOWN_TAKEN)
+    clean_stops = sum(1 for e in cooldowns if e.get("type") == "max_loss")
+    add("Stopped cleanly at daily limit", clean_stops, XP_CLEAN_DAILY_STOP)
+
     # anti-farming / penalties
     add("Oversized past risk %", sum(1 for t in trades if (t.get("quality_risk") is not None and t["quality_risk"] < 6)), XP_OVERSIZED)
     add("Skipped a qualified setup", len(missed), XP_SKIPPED_QUALIFIED)
     add("Off-plan (ignored regime/plan)", sum(1 for t in trades if _has(t.get("mistakes"), "off-plan")), XP_OFF_PLAN)
     add("Tilt (revenge / FOMO / news)", sum(1 for t in trades if any(_has(t.get("mistakes"), tag) for tag in _TILT_TAGS)), XP_TILT)
     add("Hit max daily loss", sum(1 for r in reviews if r.get("reason") == "daily_stop"), XP_DAILY_STOP_BREACH)
+    add("Revenge override (forced post-tilt entry)", sum(1 for t in trades if t.get("was_revenge_override") == 1), XP_REVENGE_OVERRIDE)
 
     return rows
 
@@ -162,6 +174,14 @@ def streak(data: dict[str, Any]) -> dict[str, Any]:
         if d:
             by_day[d].append(r)
 
+    # a day with a revenge override (forced post-tilt entry) breaks the streak
+    override_days: set[str] = set()
+    for t in data.get("trades", []):
+        if t.get("was_revenge_override") == 1:
+            d = _day(t.get("created_at"))
+            if d:
+                override_days.add(d)
+
     def qualifies(day_reviews: list[dict[str, Any]]) -> bool:
         # GOOD day: took >=1 setup and met the quality bar.
         took = sum(rv.get("taken", 0) for rv in day_reviews)
@@ -177,7 +197,7 @@ def streak(data: dict[str, Any]) -> dict[str, Any]:
             return False  # poor process (oversizing drags quality down)
         return True
 
-    good_days = sorted(d for d, rv in by_day.items() if qualifies(rv))
+    good_days = sorted(d for d, rv in by_day.items() if qualifies(rv) and d not in override_days)
     if not good_days:
         return {"current": 0, "best": 0, "last_active_date": None}
 
@@ -230,7 +250,9 @@ def badges(data: dict[str, Any]) -> list[dict[str, Any]]:
     calib_active = [b for b in calib.get("buckets", []) if b.get("n")]
     calibrated = bool(calib.get("available") and calib.get("n", 0) >= 30 and calib_active and all(abs(b["expected"] - (b["win_rate"] or 0)) <= 0.10 for b in calib_active))
     clean_sessions = len(reviews)
-    no_breach = all(r.get("reason") != "daily_stop" for r in reviews)
+    # "breach" = forcing a post-tilt entry (revenge override). Hitting the daily
+    # limit and STOPPING is disciplined, so a clean daily stop no longer disqualifies.
+    no_breach = all(t.get("was_revenge_override") != 1 for t in trades)
 
     registry: list[dict[str, Any]] = [
         {"id": "first_100", "name": "Century", "icon": "💯", "description": "Log 100 paper trades.",
@@ -243,7 +265,7 @@ def badges(data: dict[str, Any]) -> list[dict[str, Any]]:
          "unlocked": positive_regimes >= 4, "progress": positive_regimes, "target": 4, "progress_label": f"{positive_regimes}/4 regimes positive"},
         {"id": "calibrated", "name": "Calibrated", "icon": "⚖️", "description": "Stated confidence within 10% of actual over 30+ trades.",
          "unlocked": calibrated, "progress": min(calib.get("n", 0), 30), "target": 30, "progress_label": f"{min(calib.get('n', 0), 30)}/30 graded trades"},
-        {"id": "iron_discipline", "name": "Iron Discipline", "icon": "🛡️", "description": "5 sessions with no max-daily-loss breach.",
+        {"id": "iron_discipline", "name": "Iron Discipline", "icon": "🛡️", "description": "5 sessions with no revenge-trade override.",
          "unlocked": (clean_sessions >= 5 and no_breach), "progress": min(clean_sessions, 5), "target": 5, "progress_label": f"{min(clean_sessions, 5)}/5 clean sessions"},
     ]
 

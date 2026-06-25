@@ -1,6 +1,14 @@
 "use client";
 
+import { setTradeFeeling } from "../../lib/api";
+import { useSettings } from "../../lib/settings";
 import { useStore } from "../../lib/store";
+
+const FEELINGS: { key: string; label: string }[] = [
+  { key: "good", label: "Good" },
+  { key: "neutral", label: "Neutral" },
+  { key: "bad", label: "Bad" },
+];
 
 function Bar({ label, score, reason }: { label: string; score: number; reason: string }) {
   const pct = Math.max(0, Math.min(100, score * 10));
@@ -22,7 +30,15 @@ function Bar({ label, score, reason }: { label: string; score: number; reason: s
 export default function PostTradeCard() {
   const t = useStore((s) => s.lastClosed);
   const dismiss = useStore((s) => s.dismissPostTrade);
+  const lastClosedId = useStore((s) => s.lastClosedId);
+  const setFeeling = useStore((s) => s.setLastClosedFeeling);
+  const checkinsOn = useSettings((s) => s.settings.emotionalCheckins);
   if (!t || !t.quality) return null;
+
+  const pickFeeling = (f: string) => {
+    setFeeling(f);
+    if (lastClosedId != null) void setTradeFeeling(lastClosedId, f).catch(() => undefined);
+  };
 
   const q = t.quality;
   const won = t.r_multiple > 0;
@@ -82,6 +98,26 @@ export default function PostTradeCard() {
       </div>
 
       <p className="mt-3 text-[11px] text-text">{lesson}</p>
+
+      {/* optional one-tap feeling check-in — gated by the setting, dismissible, never blocks */}
+      {checkinsOn && (
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <span className="text-[10px] uppercase tracking-wider text-muted">How did that go?</span>
+          <div className="flex gap-1.5">
+            {FEELINGS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => pickFeeling(f.key)}
+                className={`chip ${t.postTradeFeeling === f.key ? "border-neon/60 text-neon" : "border-line text-muted hover:text-text"}`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <button onClick={dismiss} className="mt-3 w-full rounded-lg bg-neon px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110">
         Got it
       </button>

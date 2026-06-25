@@ -68,6 +68,43 @@ def test_xp_weights_process_over_wins_and_penalises_antipatterns() -> None:
     assert by["Winning trade"]["xp_each"] < by["Took a qualified setup"]["xp_each"]
 
 
+def test_discipline_xp_cooldown_clean_stop_override() -> None:
+    data = _data(
+        trades=[_trade(id=1, r_multiple=-1.0, was_revenge_override=1)],
+        cooldown_events=[
+            {"type": "tilt", "ended_early": 0},   # completed → earns XP
+            {"type": "tilt", "ended_early": 1},   # ended early → no XP
+            {"type": "max_loss"},                 # clean daily stop → earns XP
+        ],
+    )
+    by = {r["event"]: r for r in progression.xp_ledger(data)}
+    assert by["Took a suggested cooldown"]["count"] == 1
+    assert by["Took a suggested cooldown"]["xp"] == progression.XP_TILT_COOLDOWN_TAKEN
+    assert by["Stopped cleanly at daily limit"]["xp"] == progression.XP_CLEAN_DAILY_STOP
+    assert by["Revenge override (forced post-tilt entry)"]["xp"] == progression.XP_REVENGE_OVERRIDE
+
+
+def test_streak_breaks_on_revenge_override() -> None:
+    # a day that otherwise qualifies is broken by a revenge override that day
+    s = progression.streak(_data(
+        session_reviews=[_review("2026-06-24")],
+        trades=[_trade(id=1, created_at="2026-06-24 12:00:00", was_revenge_override=1)],
+    ))
+    assert s["current"] == 0
+
+
+def test_iron_discipline_reframed_to_overrides(db: Path) -> None:
+    reviews = [{"reason": "manual"} for _ in range(4)] + [{"reason": "daily_stop"}]
+    # 5 sessions incl. a CLEAN daily stop, no overrides → still unlocked (D)
+    clean = _data(trades=[_trade(id=i) for i in range(3)], session_reviews=reviews,
+                  stats={"n": 3, "streaks": {"best_win": 0, "current": 0, "best_loss": 0}})
+    assert {b["id"]: b for b in progression.badges(clean)}["iron_discipline"]["unlocked"] is True
+    # a revenge override breaks it
+    broken = _data(trades=[_trade(id=1, was_revenge_override=1)], session_reviews=reviews,
+                   stats={"n": 1, "streaks": {"best_win": 0, "current": 0, "best_loss": 0}})
+    assert {b["id"]: b for b in progression.badges(broken)}["iron_discipline"]["unlocked"] is False
+
+
 def test_tiers() -> None:
     assert progression.tier_for(0)["tier"] == "Novice"
     assert progression.tier_for(199)["tier"] == "Novice"

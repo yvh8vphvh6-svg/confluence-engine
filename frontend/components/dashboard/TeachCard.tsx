@@ -6,6 +6,7 @@ import { logMissedSetup } from "../../lib/api";
 import { useSettings } from "../../lib/settings";
 import { useStore, type Direction, type PaperPosition } from "../../lib/store";
 import type { EntryCtx, Prediction } from "../../lib/quality";
+import { useDiscipline } from "../../lib/useDiscipline";
 import { play } from "../../lib/stream";
 import { fmt, usd, FACTOR_LABEL, REGIME_LABEL } from "../../lib/format";
 
@@ -27,6 +28,8 @@ export default function TeachCard() {
   const timerOn = useSettings((s) => s.settings.decisionTimerEnabled);
   const timerSecs = useSettings((s) => s.settings.decisionTimerSeconds);
   const riskPct = useSettings((s) => s.settings.riskPerTradePct);
+  const pendingOverride = useStore((s) => s.pendingRevengeOverride);
+  const gate = useDiscipline();
 
   const [phase, setPhase] = useState<"predict" | "reveal">("reveal");
   const [predicted, setPredicted] = useState<Predicted | null>(null);
@@ -36,6 +39,7 @@ export default function TeachCard() {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const startRef = useRef<number>(0);
   const seenBar = useRef<number>(-1);
+  const skipRef = useRef<((timedOut?: boolean) => void) | null>(null);
 
   const sig = teach && tick ? tick.signals.find((s) => s.name === teach.setup) : undefined;
 
@@ -65,21 +69,21 @@ export default function TeachCard() {
     }
   }, [teach, confidencePrompt, timerOn, timerSecs, noteSetupSeen]);
 
-  // decision-pressure countdown — expiry auto-commits a Skip
+  // decision-pressure countdown — expiry auto-logs a skipped decision (E1)
   useEffect(() => {
     if (phase !== "predict" || !timerOn) return;
     if (secondsLeft <= 0) {
-      commit("skip");
+      skipRef.current?.(true);
       return;
     }
     const id = setTimeout(() => setSecondsLeft((s) => s - 1), 1000);
     return () => clearTimeout(id);
-  }, [phase, timerOn, secondsLeft, commit]);
+  }, [phase, timerOn, secondsLeft]);
 
   if (!teach || !tick) return null;
   const pv = meta?.instrument.point_value ?? 1;
 
-  const canTrade = Boolean(sig && sig.entry != null && sig.stop != null && sig.target != null && !position);
+  const canTrade = Boolean(sig && sig.entry != null && sig.stop != null && sig.target != null && !position) && gate.canTake;
   const risk = canTrade ? Math.abs(sig!.entry! - sig!.stop!) : 0;
   const rr = canTrade && risk > 0 ? Math.abs(sig!.target! - sig!.entry!) / risk : 0;
   const contracts = risk > 0 ? ((riskPct / 100) * balance) / (risk * pv) : 0;
@@ -132,6 +136,8 @@ export default function TeachCard() {
       regime: tick.regime,
       prediction: buildPrediction(),
       entryCtx: buildEntryCtx(),
+      wasPostTilt: pendingOverride || gate.consecutiveLosses >= gate.threshold,
+      wasRevengeOverride: pendingOverride,
       snapshot: {
         bars: useStore.getState().recentBars.slice(-40).map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })),
         entry: sig.entry!,
@@ -146,7 +152,7 @@ export default function TeachCard() {
     play();
   };
 
-  const skip = () => {
+  const skip = (timedOut = false) => {
     if (sig) {
       const pred = buildPrediction();
       noteSkippedQualified(rr); // R potential of the setup we passed on
@@ -159,13 +165,15 @@ export default function TeachCard() {
         r_potential: Number(rr.toFixed(2)),
         confluence: conf,
         confidence: pred?.confidence ?? null,
-        decision_ms: decisionMs,
-        predicted_direction: predicted ?? "",
-        rationale,
+        decision_ms: timedOut ? timerSecs * 1000 : decisionMs,
+        predicted_direction: timedOut ? "skip" : predicted ?? "",
+        rationale: timedOut ? "timer expired" : rationale,
       }).catch(() => undefined);
     }
     play();
   };
+  // expose the latest skip() to the countdown effect (declared above the guard)
+  skipRef.current = skip;
 
   const resume = () => play();
   const directionTone = (d: Direction | Predicted) =>
@@ -293,9 +301,9 @@ export default function TeachCard() {
 
           <div className="mt-3 flex gap-2">
             <button onClick={take} disabled={!canTrade} className="flex-1 rounded-lg bg-profit px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-40">
-              {position ? "In a trade" : "Take"}
+              {gate.lockedOut ? "Locked" : gate.cooldownActive ? "Cooldown" : position ? "In a trade" : "Take"}
             </button>
-            <button onClick={skip} className="btn flex-1">Skip</button>
+            <button onClick={() => skip()} className="btn flex-1">Skip</button>
             <button onClick={resume} className="btn flex-1">Resume</button>
           </div>
           <p className="mt-2 text-[10px] text-muted">

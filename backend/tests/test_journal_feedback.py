@@ -113,3 +113,51 @@ def test_calibration_hidden_under_10(db: Path) -> None:
     calib = journal.fetch_all()["calibration"]
     assert calib["available"] is False
     assert calib["n"] == 4
+
+
+# --- discipline layer ---------------------------------------------------------
+def test_discipline_trade_fields_roundtrip(db: Path) -> None:
+    tid = journal.add_trade(PaperTradeIn(
+        symbol="MNQ", strategy="ORB", direction="long", regime="trending",
+        r_multiple=1.0, exit_reason="target",
+        was_post_tilt=True, was_revenge_override=True, pre_emotional_state="Frustrated"))
+    journal.set_trade_feeling(tid, "bad")  # optional micro check-in (idempotent)
+    journal.set_trade_feeling(tid, "bad")
+    t = journal.fetch_all()["trades"][0]
+    assert t["was_post_tilt"] == 1
+    assert t["was_revenge_override"] == 1
+    assert t["pre_emotional_state"] == "Frustrated"
+    assert t["post_trade_feeling"] == "bad"
+
+
+def test_cooldown_event_roundtrip(db: Path) -> None:
+    journal.add_cooldown_event(journal.CooldownEventIn(type="tilt", length_min=5, ended_early=False))
+    journal.add_cooldown_event(journal.CooldownEventIn(type="max_loss", length_min=0))
+    ce = journal.fetch_all()["cooldown_events"]
+    assert len(ce) == 2
+    assert {e["type"] for e in ce} == {"tilt", "max_loss"}
+    tilt = next(e for e in ce if e["type"] == "tilt")
+    assert tilt["ended_early"] == 0 and tilt["length_min"] == 5
+
+
+def test_emotion_correlation_sample_gate(db: Path) -> None:
+    for _ in range(6):  # below the 10-per-bucket gate → not shown
+        journal.add_trade(PaperTradeIn(strategy="ORB", r_multiple=1.0, exit_reason="target", pre_emotional_state="Focused"))
+    assert journal.fetch_all()["emotion_correlation"]["available"] is False
+    for _ in range(4):  # 6 wins + 4 losses = 10 → bucket now shown
+        journal.add_trade(PaperTradeIn(strategy="ORB", r_multiple=-1.0, exit_reason="stop", pre_emotional_state="Focused"))
+    c = journal.fetch_all()["emotion_correlation"]
+    assert c["available"] is True and c["provisional"] is True
+    b = next(x for x in c["buckets"] if x["key"] == "Focused")
+    assert b["n"] == 10 and b["shown"] is True and b["won"] == 6
+    assert b["win_rate"] == 0.6
+
+
+def test_decision_speed_buckets(db: Path) -> None:
+    for _ in range(10):
+        journal.add_trade(PaperTradeIn(strategy="ORB", r_multiple=1.0, exit_reason="target", decision_ms=3000))
+    c = journal.fetch_all()["decision_speed"]
+    fast = next(x for x in c["buckets"] if x["key"] == "<5s")
+    assert fast["n"] == 10 and fast["shown"] is True
+    slow = next(x for x in c["buckets"] if x["key"] == ">10s")
+    assert slow["n"] == 0 and slow["shown"] is False
