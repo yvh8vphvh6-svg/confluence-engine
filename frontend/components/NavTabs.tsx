@@ -53,6 +53,17 @@ const GROUPS: { title: string; items: Item[] }[] = [
       { href: "/validation", label: "Validation" },
     ],
   },
+  {
+    title: "Social",
+    items: [
+      { href: "/leaderboard", label: "Leaderboard" },
+      { href: "/duels", label: "Duels" },
+      { href: "/community", label: "Community" },
+      { href: "/mentor", label: "Mentor Mode" },
+      { href: "/success", label: "Success Stories" },
+      { href: "/share", label: "Strategy Sharing" },
+    ],
+  },
 ];
 
 function Dropdown({ title, items, pathname }: { title: string; items: Item[]; pathname: string }) {

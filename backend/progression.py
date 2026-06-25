@@ -38,6 +38,7 @@ XP_CHALLENGE_COMPLETE = 25  # completed a daily challenge
 XP_TILT_COOLDOWN_TAKEN = 8  # took (and completed) a suggested tilt cooldown — discipline
 XP_CLEAN_DAILY_STOP = 12    # hit the daily limit and stopped cleanly (the rule that protects accounts)
 XP_PATTERN_DRILL = 5        # correctly matched a pattern drill (per distinct scenario, once)
+XP_DUEL_WIN = 6             # won a head-to-head duel (per distinct scenario, once)
 
 XP_OVERSIZED = -8           # sized past the configured risk % (quality.risk < 6)
 XP_SKIPPED_QUALIFIED = -4   # skipped a qualified setup (logged missed practice)
@@ -87,7 +88,7 @@ def _has(mistakes: str | None, tag: str) -> bool:
 # XP LEDGER + TIERS
 # --------------------------------------------------------------------------- #
 def xp_ledger(data: dict[str, Any], completed_challenges: int = 0,
-              pattern_drills_correct: int = 0) -> list[dict[str, Any]]:
+              pattern_drills_correct: int = 0, duel_wins: int = 0) -> list[dict[str, Any]]:
     """Grouped, auditable ledger: one row per rule with count + xp_each + xp.
 
     `completed_challenges` is the deduped (day, challenge-id) completion count
@@ -131,6 +132,7 @@ def xp_ledger(data: dict[str, Any], completed_challenges: int = 0,
     clean_stops = sum(1 for e in cooldowns if e.get("type") == "max_loss")
     add("Stopped cleanly at daily limit", clean_stops, XP_CLEAN_DAILY_STOP)
     add("Pattern drill correct", pattern_drills_correct, XP_PATTERN_DRILL)
+    add("Duel won", duel_wins, XP_DUEL_WIN)
 
     # anti-farming / penalties
     add("Oversized past risk %", sum(1 for t in trades if (t.get("quality_risk") is not None and t["quality_risk"] < 6)), XP_OVERSIZED)
@@ -423,12 +425,13 @@ def regime_matrix(data: dict[str, Any]) -> dict[str, Any]:
 
 def summary(day: str | None = None) -> dict[str, Any]:
     """The full progression payload, derived from the journal records."""
-    from . import translation
+    from . import social, translation
     data = journal.fetch_all()
     # recompute + persist today's challenge completions BEFORE building the
     # ledger, so a just-completed challenge is reflected in the same response.
     challenges = daily_challenges(data, day)
-    ledger = xp_ledger(data, _completed_challenge_total(), translation.pattern_drill_correct_count())
+    ledger = xp_ledger(data, _completed_challenge_total(), translation.pattern_drill_correct_count(),
+                       social.duel_wins_count())
     total = xp_total(ledger)
     return {
         "xp": {"total": total, "ledger": ledger, "tier": tier_for(total)},

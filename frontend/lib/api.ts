@@ -555,3 +555,52 @@ export type RiskCounterfactual =
       actual_curve: number[]; model_curve: number[]; headline: string; note: string;
     };
 export const getRiskCounterfactual = (s?: AbortSignal) => getJson<RiskCounterfactual>("/api/risk/counterfactual", s);
+
+// --- Phase F: social layer (all via SocialDataSource) ---
+export type TraderRank = {
+  rank: number; name: string; is_user: boolean; is_example: boolean;
+  rolling_expectancy_r: number | null; n_trades: number; blurb: string;
+};
+export const getSocialLeaderboard = (s?: AbortSignal) =>
+  getJson<{ entries: TraderRank[] }>("/api/social/leaderboard", s);
+
+export type DuelNew = {
+  scenario: string; symbol: string; timeframe: string; decision_index: number;
+  candles: MarketBar[]; opponent: { name: string; is_example: boolean };
+};
+export type DuelHistory = { n: number; wins: number; losses: number; ties: number; recent: Record<string, unknown>[] };
+export type DuelResult = {
+  correct_direction: string; winner: string;
+  user: { direction: string; confidence: number; correct: boolean; score: number };
+  opponent: { name: string; is_example: boolean; direction: string; confidence: number; correct: boolean; score: number };
+  history: DuelHistory;
+};
+export const getDuel = (s?: AbortSignal) => getJson<DuelNew>("/api/social/duel/new", s);
+export const scoreDuel = (body: Record<string, unknown>) => postJson<DuelResult>("/api/social/duel/score", body);
+export const getDuelHistory = (s?: AbortSignal) => getJson<DuelHistory>("/api/social/duel/history", s);
+
+export type CommunityChallenge = {
+  challenge_id: string; week: string; title: string; target: number;
+  user_progress: number; user_raw: number; user_complete: boolean;
+  community: { is_sample: boolean; participants: number; avg_progress: number; target: number; note: string };
+};
+export const getCommunity = (s?: AbortSignal) => getJson<CommunityChallenge>("/api/social/community", s);
+export const contributeCommunity = (body: Record<string, unknown>) =>
+  postJson<{ id: number }>("/api/social/community/contribute", body);
+
+export type MentorTrade = { strategy: string; direction: string; regime: string; r_multiple: number; exit_reason: string; mistakes: string };
+export type MentorStudent = { name: string; is_example: boolean; trades: MentorTrade[] };
+export const getMentorStudent = (self: boolean, s?: AbortSignal) =>
+  getJson<MentorStudent>(`/api/social/mentor?self_review=${self}`, s);
+export const postMentorFeedback = (body: Record<string, unknown>) =>
+  postJson<{ id: number }>("/api/social/mentor/feedback", body);
+
+export type SuccessStories = {
+  has_real: boolean;
+  milestones: { label: string; value: string; real: boolean }[];
+  note: string;
+  examples: { name: string; is_example: boolean; story: string }[];
+};
+export const getSuccessStories = (s?: AbortSignal) => getJson<SuccessStories>("/api/social/success", s);
+export const logStrategyImport = (body: Record<string, unknown>) =>
+  postJson<{ id: number }>("/api/social/import", body);

@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from .. import journal, progression, translation
+from .. import journal, progression, social, translation
 from ..data import market_source
 from . import customstrats, repository
 from . import decision as decision_mod
@@ -22,6 +22,16 @@ router = APIRouter(prefix="/api", tags=["data"])
 class TradeFeelingIn(BaseModel):
     id: int
     feeling: str = ""
+
+
+class ContributeIn(BaseModel):
+    challenge_id: str
+    progress: int = 0
+
+
+class ImportLogIn(BaseModel):
+    name: str
+    origin: str = "code"
 
 
 @router.get("/instruments")
@@ -115,7 +125,65 @@ def delete_journal() -> dict[str, Any]:
     journal.clear()
     progression.clear()
     translation.clear()
+    social.clear()
     return {"status": "cleared"}
+
+
+# --- Phase F: social layer (all via SocialDataSource) -------------------------
+@router.get("/social/leaderboard")
+def get_social_leaderboard() -> dict[str, Any]:
+    return {"entries": social.get_source().leaderboard()}
+
+
+@router.get("/social/duel/new")
+def get_social_duel() -> dict[str, Any]:
+    try:
+        return social.new_duel()
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/social/duel/score")
+def post_social_duel(req: social.DuelScoreIn) -> dict[str, Any]:
+    try:
+        return social.score_duel(req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/social/duel/history")
+def get_social_duel_history() -> dict[str, Any]:
+    return social.duel_history()
+
+
+@router.get("/social/community")
+def get_social_community() -> dict[str, Any]:
+    return social.community_challenge(social.current_week())
+
+
+@router.post("/social/community/contribute")
+def post_social_contribute(body: ContributeIn) -> dict[str, Any]:
+    return {"id": social.record_contribution(body.challenge_id, body.progress)}
+
+
+@router.get("/social/mentor")
+def get_social_mentor(self_review: bool = False) -> dict[str, Any]:
+    return social.get_source().mentor_student(self_review)
+
+
+@router.post("/social/mentor/feedback")
+def post_social_mentor_feedback(req: social.MentorFeedbackIn) -> dict[str, Any]:
+    return {"id": social.add_mentor_feedback(req)}
+
+
+@router.get("/social/success")
+def get_social_success() -> dict[str, Any]:
+    return social.success_stories()
+
+
+@router.post("/social/import")
+def post_social_import(body: ImportLogIn) -> dict[str, Any]:
+    return {"id": social.log_import(body.name, body.origin)}
 
 
 # --- Phase E: translation layer (dual-source, drills, risk, compare) ---------
