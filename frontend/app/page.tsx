@@ -89,14 +89,17 @@ export default function PracticePage() {
     useStore.getState().setAutoPause(autoPauseSetting);
   }, [autoPauseSetting]);
 
-  // first-visit: launch the interactive tour
+  // first-visit: launch the interactive tour — but only AFTER the BootHero
+  // load-in has finished/been dismissed, so the two never overlap on screen.
+  const bootComplete = useStore((s) => s.bootComplete);
   useEffect(() => {
+    if (!bootComplete) return;
     try {
       if (!localStorage.getItem("ce_tour_seen_v1")) setTourOpen(true);
     } catch {
       /* ignore */
     }
-  }, [setTourOpen]);
+  }, [bootComplete, setTourOpen]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

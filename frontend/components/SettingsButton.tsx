@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -106,6 +107,8 @@ export default function SettingsButton() {
   const settings = useSettings((s) => s.settings);
   const update = useSettings((s) => s.update);
   const resetAll = useSettings((s) => s.resetAll);
+  const setTourOpen = useStore((s) => s.setTourOpen);
+  const router = useRouter();
 
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const reduced = useReducedMotion();
@@ -221,6 +224,14 @@ export default function SettingsButton() {
     setMsg("Settings restored to defaults.");
   };
 
+  // Replay the guided tour: close settings, head to Practice (where <Tour/> is
+  // mounted and the data-tour anchors live), then open it.
+  const replayTour = () => {
+    setOpen(false);
+    setTourOpen(true);
+    router.push("/");
+  };
+
   // motion-aware enter/leave classes (reduced motion → opacity only)
   const closed = reduced ? "opacity-0" : isDesktop ? "scale-95 opacity-0" : "translate-y-full opacity-0";
   const panelClasses = [
@@ -236,6 +247,7 @@ export default function SettingsButton() {
       <button
         ref={triggerRef}
         type="button"
+        data-tour="settings"
         aria-label="Open settings"
         aria-expanded={open}
         onClick={() => setOpen(true)}
@@ -472,6 +484,9 @@ export default function SettingsButton() {
                   </Row>
                   <Row label="Daily challenge reminders">
                     <Toggle label="Daily challenge reminders" checked={settings.dailyChallengeReminders} onChange={(v) => set("dailyChallengeReminders", v)} />
+                  </Row>
+                  <Row label="Guided tour" hint="Replay the first-time walkthrough">
+                    <button type="button" onClick={replayTour} className="btn text-[11px]">Replay tour</button>
                   </Row>
                 </Section>
               </div>

@@ -314,6 +314,7 @@ type Store = {
   inspector: StrategySignalView | null;
   learnOpen: boolean;
   tourOpen: boolean;
+  bootComplete: boolean; // BootHero has finished/dismissed — gates the first-visit tour
   teach: Teach | null;
   autoPause: boolean;
   // manual / practice paper trading
@@ -334,6 +335,7 @@ type Store = {
   pendingRevengeOverride: boolean; // armed by "Take anyway" during a cooldown
   setLearnOpen: (open: boolean) => void;
   setTourOpen: (open: boolean) => void;
+  setBootComplete: (done: boolean) => void;
   setTeach: (t: Teach | null) => void;
   setAutoPause: (on: boolean) => void;
   setConnection: (c: ConnectionState) => void;
@@ -445,6 +447,7 @@ export const useStore = create<Store>((set) => ({
   inspector: null,
   learnOpen: false,
   tourOpen: false,
+  bootComplete: false,
   teach: null,
   autoPause: true,
   manualMode: true,
@@ -463,6 +466,7 @@ export const useStore = create<Store>((set) => ({
   pendingRevengeOverride: false,
   setLearnOpen: (learnOpen) => set({ learnOpen }),
   setTourOpen: (tourOpen) => set({ tourOpen }),
+  setBootComplete: (bootComplete) => set({ bootComplete }),
   setTeach: (teach) => set({ teach }),
   setAutoPause: (autoPause) => set({ autoPause }),
   setConnection: (connection) => set({ connection }),

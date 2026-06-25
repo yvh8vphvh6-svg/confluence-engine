@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { getDecisionStats, getJournal, getProgression, type Progression } from "../lib/api";
 import { useSettings } from "../lib/settings";
+import { useStore } from "../lib/store";
 import { computeTraderProfile, type TraderProfile } from "../lib/traderProfile";
 import { useReducedMotion } from "../lib/useMotion";
 import BadgeGrid from "./BadgeGrid";
@@ -16,13 +17,16 @@ type Stage = "checking" | "boot" | "ready" | "hidden";
 export default function BootHero() {
   const reduced = useReducedMotion();
   const displayName = useSettings((s) => s.settings.displayName);
+  const setBootComplete = useStore((s) => s.setBootComplete);
   const [stage, setStage] = useState<Stage>("checking");
   const [lineCount, setLineCount] = useState(0);
   const [profile, setProfile] = useState<TraderProfile | null>(null);
   const [prog, setProg] = useState<Progression | null>(null);
 
   // decide whether to show (once per session) — runs only on the client so SSR
-  // and first paint both render null (no hydration mismatch)
+  // and first paint both render null (no hydration mismatch). If we're NOT
+  // showing (already seen this session), boot is immediately "complete" so the
+  // first-visit tour can proceed without waiting.
   useEffect(() => {
     let seen = false;
     try {
@@ -31,7 +35,8 @@ export default function BootHero() {
       seen = false;
     }
     setStage(seen ? "hidden" : "boot");
-  }, []);
+    if (seen) setBootComplete(true);
+  }, [setBootComplete]);
 
   // pull REAL stored stats once we're showing
   useEffect(() => {
@@ -75,6 +80,7 @@ export default function BootHero() {
       /* ignore */
     }
     setStage("hidden");
+    setBootComplete(true); // hand off to the first-visit tour
   };
 
   if (stage === "checking" || stage === "hidden") return null;

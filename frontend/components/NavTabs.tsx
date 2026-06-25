@@ -16,8 +16,8 @@ const MODES: Item[] = [
   { href: "/real-mode", label: "Real Mode" },
 ];
 
-// Grouped dropdown sections
-const GROUPS: { title: string; items: Item[] }[] = [
+// Grouped dropdown sections. `tourId` exposes a stable anchor for the guided tour.
+const GROUPS: { title: string; items: Item[]; tourId?: string }[] = [
   {
     title: "Train",
     items: [
@@ -43,6 +43,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
   },
   {
     title: "Track",
+    tourId: "track",
     items: [
       { href: "/journal", label: "Journal" },
       { href: "/library", label: "Pattern Library" },
@@ -55,6 +56,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
   },
   {
     title: "Social",
+    tourId: "social",
     items: [
       { href: "/leaderboard", label: "Leaderboard" },
       { href: "/duels", label: "Duels" },
@@ -66,7 +68,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
   },
 ];
 
-function Dropdown({ title, items, pathname }: { title: string; items: Item[]; pathname: string }) {
+function Dropdown({ title, items, pathname, tourId }: { title: string; items: Item[]; pathname: string; tourId?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const groupActive = items.some((i) => i.href === pathname);
@@ -86,6 +88,7 @@ function Dropdown({ title, items, pathname }: { title: string; items: Item[]; pa
   return (
     <div ref={ref} className="relative">
       <button
+        data-tour={tourId}
         onClick={() => setOpen((o) => !o)}
         className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
           groupActive ? "bg-neon/10 text-neon" : "text-muted hover:text-text"
@@ -134,6 +137,7 @@ export default function NavTabs() {
           <Link
             key={t.href}
             href={t.href}
+            data-tour={t.href === "/real-mode" ? "real-mode" : undefined}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
               active ? "bg-neon/10 text-neon" : "text-text hover:text-neon"
             }`}
@@ -144,7 +148,7 @@ export default function NavTabs() {
       })}
       <span className="mx-1 h-4 w-px bg-line" />
       {GROUPS.map((g) => (
-        <Dropdown key={g.title} title={g.title} items={g.items} pathname={pathname} />
+        <Dropdown key={g.title} title={g.title} items={g.items} pathname={pathname} tourId={g.tourId} />
       ))}
     </nav>
   );

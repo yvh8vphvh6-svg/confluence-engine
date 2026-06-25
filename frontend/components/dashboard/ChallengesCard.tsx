@@ -12,7 +12,7 @@ export default function ChallengesCard() {
   const open = challenges.length - completed;
 
   return (
-    <div className="panel p-4">
+    <div className="panel p-4" data-tour="challenges">
       <div className="mb-2 flex items-center justify-between">
         <p className="panel-head">Daily challenges</p>
         {reminders && open > 0 ? (
