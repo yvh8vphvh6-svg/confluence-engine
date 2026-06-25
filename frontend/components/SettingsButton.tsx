@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { clearDecisions, clearJournal, getJournal, type JournalData } from "../lib/api";
+import { clearDecisions, clearJournal, getJournal, getMarketStatus, type JournalData, type MarketStatus } from "../lib/api";
 import {
   useSettings,
   type Density,
@@ -117,6 +117,7 @@ export default function SettingsButton() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [marketStatus, setMarketStatus] = useState<MarketStatus | null>(null);
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -126,6 +127,7 @@ export default function SettingsButton() {
     if (open) {
       setThemeId(storedThemeId());
       setMounted(true);
+      getMarketStatus().then(setMarketStatus).catch(() => setMarketStatus(null));
       const raf = requestAnimationFrame(() => setShown(true));
       return () => cancelAnimationFrame(raf);
     }
@@ -423,6 +425,34 @@ export default function SettingsButton() {
                   <Row label="Revenge-trade guard" hint="Confirm before a post-tilt entry">
                     <Toggle label="Revenge-trade guard" checked={settings.revengeGuard} onChange={(v) => set("revengeGuard", v)} />
                   </Row>
+                </Section>
+
+                <Section title="Real Mode">
+                  <Row label="Market data source" hint="Replay = bundled recorded bars (no key)">
+                    <div className="flex shrink-0 rounded-lg border border-line p-0.5 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => set("marketSource", "replay")}
+                        className={`rounded-md px-2.5 py-1 font-medium transition ${settings.marketSource === "replay" ? "bg-neon/15 text-neon" : "text-muted hover:text-text"}`}
+                      >
+                        Replay
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!marketStatus?.live_configured}
+                        onClick={() => marketStatus?.live_configured && set("marketSource", "live")}
+                        title={marketStatus?.live_configured ? "Use the configured live provider" : `Set ${marketStatus?.live_key_env ?? "the live key env var"} to enable`}
+                        className={`rounded-md px-2.5 py-1 font-medium transition ${settings.marketSource === "live" && marketStatus?.live_configured ? "bg-neon/15 text-neon" : "text-muted"} disabled:cursor-not-allowed disabled:opacity-40`}
+                      >
+                        Live
+                      </button>
+                    </div>
+                  </Row>
+                  <p className="text-[11px] text-muted">
+                    {marketStatus?.live_configured
+                      ? "Live provider configured. Real Mode places paper trades only — never real orders."
+                      : `Live is disabled until ${marketStatus?.live_key_env ?? "the provider key"} is set. Replay works offline. Paper trades only.`}
+                  </p>
                 </Section>
 
                 <Section title="Learning">

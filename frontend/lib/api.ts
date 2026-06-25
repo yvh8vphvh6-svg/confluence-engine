@@ -502,3 +502,56 @@ export const getInstruments = (s?: AbortSignal) =>
     "/api/instruments",
     s,
   );
+
+// --- Phase E: translation layer ---
+export type MarketBar = { time: number; open: number; high: number; low: number; close: number; volume?: number };
+export type MarketOverlay = { kind: string; direction: string; low: number; high: number; label: string };
+
+export type MarketStatus = {
+  active_default: string;
+  live_configured: boolean;
+  live_key_env: string;
+  replay_symbols: string[];
+  note: string;
+};
+export const getMarketStatus = (s?: AbortSignal) => getJson<MarketStatus>("/api/market/status", s);
+
+export type MarketBars = {
+  symbol: string; timeframe: string; kind: string;
+  bars: MarketBar[]; overlays: MarketOverlay[];
+  source?: string; recorded?: boolean; note?: string;
+};
+export const getMarketBars = (symbol: string, timeframe: string, source: string, s?: AbortSignal) =>
+  getJson<MarketBars>(`/api/market/bars?symbol=${symbol}&timeframe=${timeframe}&source=${source}`, s);
+
+export type ComparePayload = {
+  symbol: string; timeframe: string; seed: number;
+  synthetic: { candles: MarketBar[]; overlays: MarketOverlay[]; label: string };
+  real: { candles: MarketBar[]; overlays: MarketOverlay[]; source: string; recorded: boolean; note: string };
+  note: string;
+};
+export const getCompare = (symbol: string, timeframe: string, s?: AbortSignal) =>
+  getJson<ComparePayload>(`/api/compare?symbol=${symbol}&timeframe=${timeframe}`, s);
+export const markCompare = (body: Record<string, unknown>) =>
+  postJson<{ id: number }>("/api/compare/mark", body);
+
+export type PatternDrill = {
+  scenario: string; symbol: string; timeframe: string; decision_index: number;
+  candles: MarketBar[]; overlays: MarketOverlay[]; regime: string;
+  choices: { name: string; label: string }[];
+};
+export type PatternStats = { n: number; accuracy: number | null; by_strategy: Record<string, { n: number; accuracy: number }> };
+export type PatternScore = { correct: boolean; optimal: string; optimal_label: string; why: string; stats: PatternStats };
+export const getPatternDrill = (s?: AbortSignal) => getJson<PatternDrill>("/api/drill/pattern/new", s);
+export const scorePatternDrill = (body: Record<string, unknown>) =>
+  postJson<PatternScore>("/api/drill/pattern/score", body);
+export const getPatternStats = (s?: AbortSignal) => getJson<PatternStats>("/api/drill/pattern/stats", s);
+
+export type RiskCounterfactual =
+  | { available: false; n: number; min_sample: number; note: string }
+  | {
+      available: true; n: number; min_sample: number;
+      actual_r: number; model_r: number; gap_r: number; losers: number; no_stop_loss_r: number;
+      actual_curve: number[]; model_curve: number[]; headline: string; note: string;
+    };
+export const getRiskCounterfactual = (s?: AbortSignal) => getJson<RiskCounterfactual>("/api/risk/counterfactual", s);

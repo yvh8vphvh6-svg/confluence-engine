@@ -6,7 +6,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from .. import journal, progression
+from .. import journal, progression, translation
+from ..data import market_source
 from . import customstrats, repository
 from . import decision as decision_mod
 from .backtest import SESSION_PRESETS, BacktestRequest, run_backtest
@@ -113,7 +114,66 @@ def post_trade_feeling(body: TradeFeelingIn) -> dict[str, Any]:
 def delete_journal() -> dict[str, Any]:
     journal.clear()
     progression.clear()
+    translation.clear()
     return {"status": "cleared"}
+
+
+# --- Phase E: translation layer (dual-source, drills, risk, compare) ---------
+@router.get("/market/status")
+def get_market_status() -> dict[str, Any]:
+    return market_source.source_status()
+
+
+@router.get("/market/bars")
+def get_market_bars(symbol: str = "MNQ", timeframe: str = "5m",
+                    source: str = "replay", limit: int = 400) -> dict[str, Any]:
+    src = market_source.resolve_source(source)
+    try:
+        bars = src.bars(symbol, timeframe, limit=limit)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    prov = src.provenance(symbol, timeframe) if hasattr(src, "provenance") else src.describe()
+    return {"symbol": symbol, "timeframe": timeframe, "kind": src.kind,
+            "bars": bars, "overlays": translation.overlays_for(bars, symbol), **prov}
+
+
+@router.get("/compare")
+def get_compare(symbol: str = "MNQ", timeframe: str = "5m", seed: int = 42) -> dict[str, Any]:
+    try:
+        return translation.compare_payload(symbol, timeframe, seed)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/compare/mark")
+def post_compare_mark(m: translation.CompareMarkIn) -> dict[str, Any]:
+    return {"id": translation.add_comparison(m)}
+
+
+@router.get("/drill/pattern/new")
+def get_pattern_drill() -> dict[str, Any]:
+    try:
+        return translation.new_pattern_drill()
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/drill/pattern/score")
+def post_pattern_drill(req: translation.PatternScoreIn) -> dict[str, Any]:
+    try:
+        return translation.score_pattern_drill(req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/drill/pattern/stats")
+def get_pattern_drill_stats() -> dict[str, Any]:
+    return translation.pattern_drill_stats()
+
+
+@router.get("/risk/counterfactual")
+def get_risk_counterfactual() -> dict[str, Any]:
+    return translation.risk_counterfactual()
 
 
 @router.get("/progression")

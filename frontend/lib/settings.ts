@@ -9,6 +9,7 @@ export type MotionPref = "system" | "on" | "off";
 export type Instrument = "MNQ" | "MGC";
 export type Timeframe = "1m" | "5m" | "15m" | "30m" | "1h";
 export type RegimeFilter = "" | "trending" | "ranging" | "high_vol" | "low_vol";
+export type MarketSource = "replay" | "live";
 
 export type Settings = {
   // appearance
@@ -42,6 +43,8 @@ export type Settings = {
   tiltThresholdLosses: number;
   cooldownMinutes: number;
   revengeGuard: boolean;
+  // real mode (Phase E)
+  marketSource: MarketSource;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -70,6 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tiltThresholdLosses: 3,
   cooldownMinutes: 5,
   revengeGuard: true,
+  marketSource: "replay",
 };
 
 export const SETTINGS_STORAGE_KEY = "ce_settings_v1";

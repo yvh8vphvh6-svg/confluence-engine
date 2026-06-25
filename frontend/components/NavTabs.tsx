@@ -13,6 +13,7 @@ const MODES: Item[] = [
   { href: "/", label: "Practice" },
   { href: "/backtest", label: "Backtest" },
   { href: "/real", label: "Real Chart" },
+  { href: "/real-mode", label: "Real Mode" },
 ];
 
 // Grouped dropdown sections
@@ -21,6 +22,8 @@ const GROUPS: { title: string; items: Item[] }[] = [
     title: "Train",
     items: [
       { href: "/drills", label: "Decision Drills" },
+      { href: "/pattern-drills", label: "Pattern Drills" },
+      { href: "/compare", label: "Synthetic vs Real" },
       { href: "/scenarios", label: "Scenarios" },
       { href: "/psychology", label: "Psychology" },
       { href: "/strategy-lab", label: "Strategy Lab" },
@@ -43,6 +46,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
     items: [
       { href: "/journal", label: "Journal" },
       { href: "/library", label: "Pattern Library" },
+      { href: "/risk-lab", label: "Risk Lab" },
       { href: "/performance", label: "Performance" },
       { href: "/progress", label: "Progression" },
       { href: "/context", label: "Market Context" },
