@@ -49,7 +49,7 @@ export default function BestSetup() {
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-base font-semibold text-text">{best.label}</p>
+              <p className="text-base text-text">{best.label}</p>
               <p className="text-[11px] text-muted">{best.family} · click for rule stack</p>
             </div>
             <span

@@ -149,7 +149,7 @@ export default function PracticePage() {
           <DisciplineBanner />
           {teach && <TeachCard />}
           <ChallengesCard />
-          <div className="panel min-w-0 overflow-hidden" data-tour="chart">
+          <div className="panel panel-focus min-w-0 overflow-hidden" data-tour="chart">
             <ChartHeader />
             <div className="bg-background p-2">
               <PriceChart />

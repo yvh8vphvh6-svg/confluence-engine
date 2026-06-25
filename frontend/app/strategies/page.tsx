@@ -1,14 +1,20 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
 import {
   FvgDiagram, OrderBlockDiagram, OpeningRangeDiagram, BosDiagram,
 } from "../../components/education/Diagrams";
 import RegimeMatrix from "../../components/RegimeMatrix";
-import { getStrategies, type StrategyInfo } from "../../lib/api";
+import { getStrategies, getStrategyExamples, type StrategyExample, type StrategyExamples, type StrategyInfo } from "../../lib/api";
+import { annotationsFromSetup } from "../../lib/annotations";
 import { STRATEGY_DOCS, type StrategyDoc } from "../../lib/strategyLibrary";
 import { fmt, pct, signColor, REGIME_LABEL } from "../../lib/format";
+
+// the reusable annotated chart (browser-only — lightweight-charts) used to draw
+// strategies that have no hand-built ConceptChart diagram, from a REAL setup
+const AnnotatedChart = dynamic(() => import("../../components/AnnotatedChart"), { ssr: false });
 
 function Diagram({ kind }: { kind?: StrategyDoc["diagram"] }) {
   if (kind === "fvg") return <FvgDiagram />;
@@ -18,11 +24,36 @@ function Diagram({ kind }: { kind?: StrategyDoc["diagram"] }) {
   return null;
 }
 
+// Diagram for a strategy without a hand-built ConceptChart: drawn with the same
+// AnnotatedChart used in the playbook, from a real generated setup where this
+// strategy's confluence actually fired (entry/stop/target bands + annotated marks).
+function ExampleDiagram({ ex }: { ex: StrategyExample }) {
+  const last = ex.candles[ex.candles.length - 1];
+  const annotations = annotationsFromSetup(ex.overlays, { ...ex.signal, regime: ex.regime }, last ? last.time : 0);
+  return (
+    <AnnotatedChart
+      candles={ex.candles}
+      annotations={annotations}
+      height={240}
+      caption={`A real ${ex.symbol} ${ex.timeframe} setup where ${ex.label}'s confluence fired — synthetic data, for learning.`}
+    />
+  );
+}
+
 export default function StrategiesPage() {
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
+  const [examples, setExamples] = useState<StrategyExamples | null>(null);
   const [ready, setReady] = useState(true);
   const [err, setErr] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+
+  // real annotated examples (one per strategy) for any strategy lacking a
+  // hand-built diagram — fetched once; honest fallback if one isn't surfaced
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getStrategyExamples(ctrl.signal).then(setExamples).catch(() => undefined);
+    return () => ctrl.abort();
+  }, []);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -136,7 +167,7 @@ export default function StrategiesPage() {
                   >
                     {isOpen ? "Hide playbook ▲" : "Full playbook ▼"}
                   </button>
-                  {isOpen && <Playbook doc={doc} />}
+                  {isOpen && <Playbook doc={doc} example={examples?.examples[s.name]} />}
                 </>
               )}
             </div>
@@ -144,19 +175,25 @@ export default function StrategiesPage() {
         })}
       </div>
       <p className="text-center text-[11px] text-warn">
-        Playbooks are educational. Diagrams are hand-built illustrations, not market data. Simulation only — not financial advice.
+        Playbooks are educational. Diagrams are hand-built illustrations or real generated examples — synthetic data, not live market data. Not financial advice.
       </p>
     </div>
   );
 }
 
-function Playbook({ doc }: { doc: StrategyDoc }) {
+function Playbook({ doc, example }: { doc: StrategyDoc; example?: StrategyExample }) {
   return (
     <div className="mt-3 space-y-3 rounded-lg border border-line bg-black/20 p-3 text-xs">
-      {doc.diagram && (
+      {doc.diagram ? (
         <div className="overflow-hidden rounded-lg border border-line">
           <Diagram kind={doc.diagram} />
         </div>
+      ) : example ? (
+        <ExampleDiagram ex={example} />
+      ) : (
+        <p className="rounded-lg border border-line bg-black/20 p-3 text-[11px] text-muted">
+          No clean generated example surfaced for this strategy in the latest scan — reload to try fresh data. (We don&apos;t invent a setup that didn&apos;t genuinely qualify.)
+        </p>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">

@@ -158,7 +158,7 @@ export default function TradePanel() {
         // ---------- managing an open paper position ----------
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span className="font-semibold text-text">{position.label}</span>
+            <span className="text-text">{position.label}</span>
             <span className={`chip ${position.direction === "long" ? "border-profit/50 text-profit" : "border-loss/50 text-loss"}`}>
               {position.direction.toUpperCase()}
             </span>

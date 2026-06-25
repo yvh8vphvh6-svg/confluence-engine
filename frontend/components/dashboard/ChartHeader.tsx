@@ -26,7 +26,7 @@ export default function ChartHeader() {
       <div className="flex items-center gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="font-semibold text-text">
+            <h2 className="text-text">
               {tick?.symbol ?? "—"} <span className="text-muted">{tick?.timeframe}</span>
             </h2>
             {tick && (

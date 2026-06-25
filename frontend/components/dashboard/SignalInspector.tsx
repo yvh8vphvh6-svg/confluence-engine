@@ -19,7 +19,7 @@ export default function SignalInspector() {
         <div className="mb-4 flex items-start justify-between">
           <div>
             <p className="text-[10px] uppercase tracking-[0.2em] text-neon">Signal Inspector</p>
-            <h2 className="text-lg font-semibold text-text">{sig.label}</h2>
+            <h2 className="text-lg text-text">{sig.label}</h2>
             <p className="text-xs text-muted">
               {sig.family} · best regime {REGIME_LABEL[sig.best_regime] ?? sig.best_regime}
             </p>

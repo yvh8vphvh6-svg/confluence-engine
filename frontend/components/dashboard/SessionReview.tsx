@@ -77,7 +77,7 @@ export default function SessionReview() {
             className="relative max-h-[86vh] w-[min(34rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-line glass-surface p-5 shadow-2xl shadow-black/60 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-accent/70 before:to-transparent"
           >
             <div className="flex items-center justify-between">
-              <p className="font-display text-sm font-semibold uppercase tracking-[0.18em] text-text">Session review</p>
+              <p className="font-display text-sm text-text">Session review</p>
               {draft.reason === "daily_stop" && <span className="chip border-loss/50 text-loss">daily stop hit</span>}
             </div>
 

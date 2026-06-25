@@ -13,7 +13,7 @@ export default function PositionCard() {
       {p ? (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span className="font-semibold text-text">
+            <span className="text-text">
               {p.symbol} · {p.strategy}
             </span>
             <span className={`chip ${p.direction === "long" ? "border-profit/40 text-profit" : "border-loss/40 text-loss"}`}>

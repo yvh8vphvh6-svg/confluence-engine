@@ -14,11 +14,15 @@ const C = {
   muted: "#8A93A8",
 } as const;
 
+// `group` splits the always-shown trade plan (entry/stop/target) from the
+// optional market structure (zones + the action marker). Beginners see only the
+// trade levels; "Show the structure" reveals the rest.
 export type Annotation =
-  | { kind: "zone"; low: number; high: number; color: string; label: string; note: string }
-  | { kind: "level"; price: number; color: string; label: string; note: string }
+  | { kind: "zone"; group: "structure"; low: number; high: number; color: string; label: string; note: string }
+  | { kind: "level"; group: "trade"; price: number; color: string; label: string; note: string }
   | {
       kind: "marker";
+      group: "structure";
       time: number;
       position: "aboveBar" | "belowBar";
       shape: "circle" | "arrowUp" | "arrowDown";
@@ -64,6 +68,7 @@ function strategyMarker(setup: SetupForAnnotation, time: number): Annotation | n
   const up = setup.direction === "long";
   const base = {
     kind: "marker" as const,
+    group: "structure" as const,
     time,
     position: (up ? "belowBar" : "aboveBar") as "aboveBar" | "belowBar",
     shape: (up ? "arrowUp" : "arrowDown") as "circle" | "arrowUp" | "arrowDown",
@@ -77,7 +82,7 @@ function strategyMarker(setup: SetupForAnnotation, time: number): Annotation | n
     case "ORB":
       return { ...base, label: "Break", note: "Opening-range break — price pushed out of the first-15-min range in the trend direction." };
     default:
-      return { ...base, shape: "circle", label: "Entry", note: `Entry trigger for ${setup.label} fired on this bar.` };
+      return { ...base, shape: "circle", label: "Trigger", note: `Entry trigger for ${setup.label} fired on this bar.` };
   }
 }
 
@@ -88,11 +93,12 @@ export function annotationsFromSetup(
 ): Annotation[] {
   const out: Annotation[] = [];
 
-  // structure zones (FVG / OB / ORB) — the boxes on the chart
+  // structure zones (FVG / OB / ORB) — behind the "Show the structure" toggle
   for (const o of overlays) {
     const color = o.kind === "ORB" ? C.warn : o.kind === "FVG" ? C.cyan : o.direction === "long" ? C.profit : C.loss;
     out.push({
       kind: "zone",
+      group: "structure",
       low: o.low,
       high: o.high,
       color,
@@ -101,19 +107,21 @@ export function annotationsFromSetup(
     });
   }
 
-  // the action marker for this strategy at the decision bar
+  // the action marker for this strategy at the decision bar (structure)
   const marker = strategyMarker(setup, lastBarTime);
   if (marker) out.push(marker);
 
-  // trade levels
+  // trade levels — always shown, plain-language and direction-aware
+  const entryNote =
+    setup.direction === "long" ? "where you'd buy" : setup.direction === "short" ? "where you'd sell short" : "where you'd enter";
   if (setup.entry != null) {
-    out.push({ kind: "level", price: setup.entry, color: C.warn, label: "Entry", note: "Where the plan enters." });
+    out.push({ kind: "level", group: "trade", price: setup.entry, color: C.warn, label: "Entry", note: entryNote });
   }
   if (setup.stop != null) {
-    out.push({ kind: "level", price: setup.stop, color: C.loss, label: "Stop", note: "Where the read is wrong — the trade is cut here." });
+    out.push({ kind: "level", group: "trade", price: setup.stop, color: C.loss, label: "Stop", note: "where you're wrong (cut the loss here)" });
   }
   if (setup.target != null) {
-    out.push({ kind: "level", price: setup.target, color: C.profit, label: "Target", note: "Where the plan takes profit." });
+    out.push({ kind: "level", group: "trade", price: setup.target, color: C.profit, label: "Target", note: "where you take profit" });
   }
   return out;
 }
