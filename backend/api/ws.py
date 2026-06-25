@@ -40,14 +40,14 @@ _MAX_CACHE = 8
 
 
 def _key(symbol: str, timeframe: str, seed: int, strategies: list[str],
-         regime_filter: str | None) -> tuple[Any, ...]:
-    return (symbol, timeframe, int(seed), tuple(sorted(strategies)), regime_filter)
+         regime_filter: str | None, difficulty: str | None) -> tuple[Any, ...]:
+    return (symbol, timeframe, int(seed), tuple(sorted(strategies)), regime_filter, difficulty)
 
 
 async def _get_sim(symbol: str, timeframe: str, seed: int, strategies: list[str] | None,
-                   regime_filter: str | None) -> LiveSimulation:
+                   regime_filter: str | None, difficulty: str | None = None) -> LiveSimulation:
     strategies = strategies or all_strategies()
-    key = _key(symbol, timeframe, seed, strategies, regime_filter)
+    key = _key(symbol, timeframe, seed, strategies, regime_filter, difficulty)
     async with _CACHE_LOCK:
         sim = _CACHE.get(key)
     if sim is not None:
@@ -55,7 +55,8 @@ async def _get_sim(symbol: str, timeframe: str, seed: int, strategies: list[str]
     stats = await asyncio.to_thread(repository.regime_stats)
     gate = await asyncio.to_thread(repository.gate_for, symbol, timeframe)
     sim = await asyncio.to_thread(
-        LiveSimulation, symbol, timeframe, seed, strategies, regime_filter, stats, gate)
+        LiveSimulation, symbol, timeframe, seed, strategies, regime_filter, stats, gate,
+        None, difficulty)
     async with _CACHE_LOCK:
         _CACHE[key] = sim
         while len(_CACHE) > _MAX_CACHE:
@@ -80,10 +81,11 @@ class Session:
         seed = msg.get("seed", self.settings.default_seed)
         strategies = msg.get("strategies") or None
         regime_filter = msg.get("regime_filter")
+        difficulty = msg.get("difficulty")
         await self._send({"type": "status", "state": "building",
                           "symbol": symbol, "timeframe": timeframe})
         try:
-            sim = await _get_sim(symbol, timeframe, seed, strategies, regime_filter)
+            sim = await _get_sim(symbol, timeframe, seed, strategies, regime_filter, difficulty)
         except Exception as exc:  # noqa: BLE001 - surface, don't swallow
             log.exception("failed to build simulation")
             await self._send({"type": "status", "state": "error", "message": str(exc)})

@@ -156,6 +156,7 @@ export type SimulationTick = {
   metrics: MetricsView;
   overlays: OverlayView[];
   data_source: "synthetic" | "live";
+  news?: boolean; // bar falls in a synthetic news window (±15m of an event)
   best_setup: string | null;
   also_firing: string[];
   qualified_setup: string | null;
@@ -188,6 +189,19 @@ export type StreamMeta = {
   regime_filter: string | null;
   data_source: "synthetic" | "live";
   starting_balance: number;
+  // synthetic difficulty / clarity tier (textbook → real-market noise)
+  difficulty?: string;
+  difficulty_levels?: string[];
+  clarity?: number;
+  synthetic_label?: string;
+  economic_calendar?: {
+    date: string;
+    time_et: string;
+    kind: string;
+    impact: string;
+    direction: number;
+    synthetic: boolean;
+  }[];
   strategies: StrategyMeta[];
 };
 
@@ -284,6 +298,7 @@ export type SimConfig = {
   seed: number;
   strategies: string[];
   regime_filter: Regime | null;
+  difficulty: string; // novice | apprentice | journeyman | master (synthetic clarity tier)
 };
 
 type Store = {
@@ -424,6 +439,7 @@ export const useStore = create<Store>((set) => ({
     seed: 42,
     strategies: [...ALL_STRATEGIES],
     regime_filter: null,
+    difficulty: "apprentice",
   },
   overlayToggles: { FVG: true, OB: true, ORB: true, BOS: true, SWEEP: true },
   inspector: null,

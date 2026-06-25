@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 import pandas as pd
 
 from ..engine.types import Instrument
-from .generator import generate_ohlcv, resample_ohlcv
+from .generator import DEFAULT_DIFFICULTY, generate_ohlcv, resample_ohlcv
 
 log = logging.getLogger("feed")
 
@@ -31,16 +31,18 @@ class MarketDataFeed(ABC):
     name: str = "feed"
 
     @abstractmethod
-    def ohlcv(self, instrument: Instrument, days: int, seed: int, timeframe: str) -> pd.DataFrame:
+    def ohlcv(self, instrument: Instrument, days: int, seed: int, timeframe: str,
+              difficulty: str | None = None) -> pd.DataFrame:
         ...
 
 
 class SyntheticFeed(MarketDataFeed):
     source = "synthetic"
-    name = "synthetic-gbm"
+    name = "synthetic-v4"
 
-    def ohlcv(self, instrument: Instrument, days: int, seed: int, timeframe: str) -> pd.DataFrame:
-        df_1m = generate_ohlcv(instrument, days=days, seed=seed)
+    def ohlcv(self, instrument: Instrument, days: int, seed: int, timeframe: str,
+              difficulty: str | None = None) -> pd.DataFrame:
+        df_1m = generate_ohlcv(instrument, days=days, seed=seed, difficulty=difficulty or DEFAULT_DIFFICULTY)
         return resample_ohlcv(df_1m, timeframe)
 
 
@@ -60,7 +62,8 @@ class _UnconfiguredLiveFeed(MarketDataFeed):
             raise RuntimeError(
                 f"{self.provider} feed requires env vars: {', '.join(missing)}")
 
-    def ohlcv(self, instrument: Instrument, days: int, seed: int, timeframe: str) -> pd.DataFrame:
+    def ohlcv(self, instrument: Instrument, days: int, seed: int, timeframe: str,
+              difficulty: str | None = None) -> pd.DataFrame:
         raise NotImplementedError(
             f"{self.provider} live data adapter is not implemented yet. "
             "Plug a real historical/live OHLCV source here (read-only — no order "

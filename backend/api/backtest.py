@@ -9,11 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from ..data.generator import generate_ohlcv, resample_ohlcv
+from ..data.generator import generate_ohlcv, news_bars, resample_ohlcv
 from ..engine import metrics as metrics_mod
 from ..engine.simulation import WARMUP, Backtester
 from ..engine.strategies import REGISTRY, Ctx, build_context
@@ -36,16 +35,6 @@ class BacktestRequest(BaseModel):
     days: int = Field(default=120, ge=20, le=300)
     session_start_min: int | None = None  # explicit override
     session: str | None = None            # preset name (london/ny/power_hour/full)
-
-
-def _news_bars(df: pd.DataFrame, seed: int) -> set[int]:
-    rng = np.random.default_rng(seed + 777)
-    out: set[int] = set()
-    for i in range(len(df)):
-        ts = df.index[i]
-        if ts.hour == 10 and ts.minute == 0 and rng.random() < 0.25:
-            out.add(i)
-    return out
 
 
 def _factor_coverage(df: pd.DataFrame, inst: Instrument, strategy: str, ctx: Ctx) -> dict[str, float]:
@@ -83,7 +72,7 @@ def run_backtest(req: BacktestRequest) -> dict[str, Any]:
     df_1m = generate_ohlcv(inst, days=req.days, seed=req.seed)
     df = resample_ohlcv(df_1m, req.timeframe)
     ctx = build_context(df, inst)
-    news = _news_bars(df, req.seed)
+    news = news_bars(df, req.seed)
 
     session_min = req.session_start_min
     if session_min is None and req.session:

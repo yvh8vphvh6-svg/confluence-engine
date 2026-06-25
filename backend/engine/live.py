@@ -25,6 +25,13 @@ import numpy as np
 import pandas as pd
 
 from ..config.settings import Settings, get_settings
+from ..data.generator import (
+    DEFAULT_DIFFICULTY,
+    DIFFICULTY_LEVELS,
+    clarity_for,
+    economic_calendar,
+    news_bars,
+)
 from ..schemas import SimulationTick
 from . import confluence
 from .execution import ExecutionModel
@@ -39,17 +46,6 @@ MAX_RECENT_TRADES = 25
 MAX_ZONE_OVERLAYS = 3          # declutter: only the most-recent few zones per kind
 ZONE_TTL_BARS = 60
 VALID_TIMEFRAMES = ("1m", "5m", "15m", "30m", "1h")
-
-
-def _news_bars(df: pd.DataFrame, seed: int) -> set[int]:
-    """Deterministic ~10:00 ET high-impact bars (matches run_backtest)."""
-    rng = np.random.default_rng(seed + 777)
-    out: set[int] = set()
-    for i in range(len(df)):
-        ts = df.index[i]
-        if ts.hour == 10 and ts.minute == 0 and rng.random() < 0.25:
-            out.add(i)
-    return out
 
 
 def _f(v: Any, default: float = 0.0) -> float:
@@ -76,6 +72,7 @@ class LiveSimulation:
         regime_stats: dict[str, Any] | None = None,
         gate: dict[str, Any] | None = None,
         settings: Settings | None = None,
+        difficulty: str | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         if symbol not in INSTRUMENTS:
@@ -91,6 +88,7 @@ class LiveSimulation:
             "trending", "ranging", "high_vol", "low_vol") else None
         self.regime_stats = regime_stats or {}
         self.gate = gate or {}
+        self.difficulty = difficulty
         # whether this (symbol, timeframe) was covered by the batch validation sweep
         self.tf_validated = len(self.gate) > 0
 
@@ -100,9 +98,10 @@ class LiveSimulation:
         self.inst = inst
         self.feed = resolve_feed()
         self.data_source = self.feed.source
-        self.df = self.feed.ohlcv(inst, days=LIVE_DAYS, seed=self.seed, timeframe=timeframe)
+        self.df = self.feed.ohlcv(inst, days=LIVE_DAYS, seed=self.seed, timeframe=timeframe,
+                                  difficulty=self.difficulty)
         self.ctx = build_context(self.df, inst)
-        self.news = _news_bars(self.df, self.seed)
+        self.news = news_bars(self.df, self.seed)
         self.snaps: list[dict[str, Any]] = self._build()
         self.first_index = WARMUP
         self.bars_total = len(self.df)
@@ -418,7 +417,8 @@ class LiveSimulation:
                 "confluence": self._primary_confluence(signal_views, pos_strategy),
                 "position": position, "recent_trades": recent_trade_dicts[-MAX_RECENT_TRADES:],
                 "metrics": metrics, "overlays": overlays,
-                "data_source": self.data_source, "best_setup": best_setup, "also_firing": also_firing,
+                "data_source": self.data_source, "news": i in self.news,
+                "best_setup": best_setup, "also_firing": also_firing,
                 "qualified_setup": qualified_setup,
             })
 
@@ -456,6 +456,13 @@ class LiveSimulation:
             "bars_total": self.bars_total, "first_index": self.first_index,
             "armed": self.armed, "regime_filter": self.regime_filter, "data_source": self.data_source,
             "starting_balance": self.settings.starting_balance,
+            # difficulty = synthetic CLARITY tier (textbook -> real-market noise),
+            # driven by the user's progression tier. Master ~ real-market noise.
+            "difficulty": self.difficulty or DEFAULT_DIFFICULTY,
+            "difficulty_levels": list(DIFFICULTY_LEVELS),
+            "clarity": round(clarity_for(self.difficulty), 3),
+            "synthetic_label": "SYNTHETIC · ILLUSTRATIVE",
+            "economic_calendar": economic_calendar(self.seed, LIVE_DAYS) if self.data_source == "synthetic" else [],
             "strategies": [
                 {"name": k, "label": v[1].label, "family": v[1].family, "best_regime": v[1].best_regime}
                 for k, v in REGISTRY.items()

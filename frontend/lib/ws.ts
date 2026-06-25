@@ -93,5 +93,6 @@ export function configMessage(config: SimConfig): Record<string, unknown> {
     seed: config.seed,
     strategies: config.strategies,
     regime_filter: config.regime_filter,
+    difficulty: config.difficulty,
   };
 }

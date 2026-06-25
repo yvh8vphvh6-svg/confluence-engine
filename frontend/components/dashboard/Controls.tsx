@@ -18,6 +18,12 @@ const REGIMES: { v: Regime | null; label: string }[] = [
   { v: "low_vol", label: "Low vol" },
 ];
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
+const DIFFICULTIES: { v: string; label: string }[] = [
+  { v: "novice", label: "Novice" },
+  { v: "apprentice", label: "Apprentice" },
+  { v: "journeyman", label: "Journeyman" },
+  { v: "master", label: "Master" },
+];
 const STRAT_LABEL: Record<string, string> = {
   ORB: "ORB",
   FVG_RETEST: "FVG Retest",
@@ -96,6 +102,22 @@ export default function Controls() {
             </option>
           ))}
         </select>
+        <p className="panel-head mb-2 mt-4">Difficulty (clarity)</p>
+        <div className="grid grid-cols-2 gap-2">
+          {DIFFICULTIES.map((d) => (
+            <button
+              key={d.v}
+              onClick={() => setConfig({ difficulty: d.v })}
+              className={`btn ${config.difficulty === d.v ? "btn-active" : ""}`}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-[10px] leading-snug text-muted">
+          Cleaner textbook structure at lower tiers; noisier and more ambiguous higher up.
+          Master ≈ real-market noise. Honest outcomes either way — setups are never rigged to win.
+        </p>
         <p className="panel-head mb-2 mt-4">Seed</p>
         <input
           type="number"

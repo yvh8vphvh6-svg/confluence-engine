@@ -20,10 +20,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
-from backend.data.generator import generate_ohlcv, resample_ohlcv
+from backend.data.generator import generate_ohlcv, news_bars, resample_ohlcv
 from backend.engine import metrics as metrics_mod
 from backend.engine.simulation import Backtester
 from backend.engine.strategies import REGISTRY, all_strategies
@@ -33,17 +32,6 @@ from backend.memory.store import MemoryStore
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 DASHBOARD_ASSET = "MNQ"
 DASHBOARD_TF = "15m"
-
-
-def news_bars_for(df: pd.DataFrame, seed: int) -> set[int]:
-    """Deterministic high-impact 'news' bars (~10:00 ET on ~25% of days)."""
-    rng = np.random.default_rng(seed + 777)
-    out: set[int] = set()
-    for i in range(len(df)):
-        ts = df.index[i]
-        if ts.hour == 10 and ts.minute == 0 and rng.random() < 0.25:
-            out.add(i)
-    return out
 
 
 def run_sweep(days: int, timeframes: list[str], seed: int, persist: bool = True) -> list[dict[str, Any]]:
@@ -57,7 +45,7 @@ def run_sweep(days: int, timeframes: list[str], seed: int, persist: bool = True)
         df_1m = generate_ohlcv(inst, days=days, seed=seed)
         for tf in timeframes:
             df = resample_ohlcv(df_1m, tf)
-            nb = news_bars_for(df, seed)
+            nb = news_bars(df, seed)
             bt = Backtester(inst, seed=seed, news_bars=nb)
             for strat in all_strategies():
                 res = bt.run(strat, df, tf)

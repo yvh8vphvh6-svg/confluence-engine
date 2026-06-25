@@ -43,7 +43,11 @@ type LineSpec = {
 // guarantees labels never overlap on the same bar/side. Trade entries/exits are
 // kept. Capped to the most recent few. Pure → easy to signature-compare so we
 // set markers once per data change, not every tick.
-function buildMarkers(tick: SimulationTick, toggles: Record<string, boolean>): SeriesMarker<UTCTimestamp>[] {
+function buildMarkers(
+  tick: SimulationTick,
+  toggles: Record<string, boolean>,
+  newsTimes: Set<number>,
+): SeriesMarker<UTCTimestamp>[] {
   const candidates: SeriesMarker<UTCTimestamp>[] = [];
   const seen = new Set<string>();
 
@@ -83,6 +87,13 @@ function buildMarkers(tick: SimulationTick, toggles: Record<string, boolean>): S
       shape: "circle",
       // no text on exits → fewer colliding labels
     });
+  }
+
+  // synthetic news windows — amber markers so spread-widening windows are
+  // obvious on the chart (the execution layer widens spreads here). Added last
+  // so a news window is never hidden by a structure marker on the same bar.
+  for (const t of newsTimes) {
+    candidates.push({ time: t as UTCTimestamp, position: "aboveBar", color: "#FFB300", shape: "circle", text: "NEWS" });
   }
 
   // one marker per (time, position) so text never stacks on the same bar/side
@@ -143,6 +154,12 @@ export default function PriceChart() {
   const rafRef = useRef<number | null>(null);
   const markerSigRef = useRef<string>("");
   const lineSigRef = useRef<string>("");
+  const newsTimesRef = useRef<Set<number>>(new Set());
+
+  // difficulty + live news flag (selectors → re-render only when they change,
+  // not every tick) for the on-chart indicators.
+  const difficulty = useStore((s) => s.meta?.difficulty ?? null);
+  const newsNow = useStore((s) => s.latestTick?.news ?? false);
 
   // Sync price-lines + markers for the current tick. Signature-gated so it only
   // touches the DOM when the overlay set actually changes — safe to call on
@@ -173,7 +190,8 @@ export default function PriceChart() {
     }
 
     // markers
-    const markers = buildMarkers(tick, toggles);
+    if (tick.news) newsTimesRef.current.add(tick.ohlc.time);
+    const markers = buildMarkers(tick, toggles, newsTimesRef.current);
     const markerSig = markers.map((m) => `${m.time}|${m.position}|${m.shape}|${m.text ?? ""}|${m.color}`).join(",");
     if (markerSig !== markerSigRef.current) {
       markerSigRef.current = markerSig;
@@ -261,9 +279,10 @@ export default function PriceChart() {
         close: c.close,
       }));
       series.setData(data);
-      // reset overlay signatures so the new dataset's overlays draw once
+      // reset overlay signatures + news accumulation so the new dataset draws clean
       markerSigRef.current = "";
       lineSigRef.current = "";
+      newsTimesRef.current = new Set();
       redrawOverlays();
       // fit ONCE on first load; afterwards just keep the latest bars in view at
       // the stable spacing (no per-load "fit everything" rescale)
@@ -336,9 +355,24 @@ export default function PriceChart() {
   return (
     <div className="relative">
       <div ref={containerRef} className="h-[clamp(320px,48vh,420px)] w-full touch-pan-y md:h-[440px]" />
-      <span className="pointer-events-none absolute left-2 top-2 z-10 rounded border border-line/60 bg-black/40 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-muted">
-        Synthetic · illustrative
-      </span>
+      <div className="pointer-events-none absolute left-2 top-2 z-10 flex items-center gap-1.5">
+        <span className="rounded border border-line/60 bg-black/40 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-muted">
+          Synthetic · illustrative
+        </span>
+        {difficulty && (
+          <span
+            className="rounded border border-line/60 bg-black/40 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-muted"
+            title={difficulty === "master" ? "Master ≈ real-market noise" : "Synthetic chart clarity tier"}
+          >
+            {difficulty}
+          </span>
+        )}
+      </div>
+      {newsNow && (
+        <span className="pointer-events-none absolute right-2 top-2 z-10 rounded border border-amber-400/60 bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-300">
+          ⚡ News · wide spreads
+        </span>
+      )}
     </div>
   );
 }

@@ -32,6 +32,9 @@ import BootHero from "../components/BootHero";
 import { startStream, play, pause, step, stepBack, applyConfig, setSpeed } from "../lib/stream";
 import { useStore } from "../lib/store";
 import { useSettings } from "../lib/settings";
+import { getProgression } from "../lib/api";
+
+const DIFFICULTY_TIERS = ["novice", "apprentice", "journeyman", "master"];
 
 const PriceChart = dynamic(() => import("../components/dashboard/PriceChart"), { ssr: false });
 
@@ -62,6 +65,23 @@ export default function PracticePage() {
     const isServerDefault = cfg.symbol === "MNQ" && cfg.timeframe === "5m" && cfg.seed === 42 && cfg.regime_filter === null;
     if (!isServerDefault) applyConfig(cfg);
     if (st.replaySpeed !== 1) setSpeed(st.replaySpeed);
+  }, []);
+
+  // synthetic difficulty (chart clarity) follows the user's progression tier on
+  // entry — Novice gets clean textbook structure, Master ≈ real-market noise.
+  // The Controls difficulty selector can still override for the session.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getProgression(ctrl.signal)
+      .then((p) => {
+        const tier = (p?.xp?.tier?.tier ?? "").toLowerCase();
+        if (DIFFICULTY_TIERS.includes(tier) && useStore.getState().config.difficulty !== tier) {
+          useStore.getState().setConfig({ difficulty: tier });
+          applyConfig(useStore.getState().config);
+        }
+      })
+      .catch(() => undefined);
+    return () => ctrl.abort();
   }, []);
 
   // keep auto-pause synced with the setting (cheap, live)

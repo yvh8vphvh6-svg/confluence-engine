@@ -196,6 +196,7 @@ class SimulationTick(BaseModel):
     metrics: MetricsView
     overlays: list[OverlayView]
     data_source: str = "synthetic"   # "synthetic" | "live"
+    news: bool = False                # bar falls in a synthetic news window (±15m of an event)
     best_setup: str | None = None     # name of the single top-ranked actionable setup
     also_firing: list[str] = Field(default_factory=list)
     qualified_setup: str | None = None  # the genuinely-qualified setup (auto-pause / stable panel)
