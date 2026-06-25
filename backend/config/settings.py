@@ -16,21 +16,20 @@ OUTPUT_DIR = REPO_ROOT / "output"
 load_dotenv(REPO_ROOT / ".env", override=False)
 
 
+# Production frontend lives on Vercel, whose deployment URL changes per build
+# (https://confluence-engine-frontend-<hash>-mnq1.vercel.app). Pinning one origin
+# breaks on every redeploy, so the Vercel origins are matched by regex instead
+# (see `cors_origin_regex`); only the stable local-dev origins are listed here.
 def _default_cors_origins() -> list[str]:
-    """Local dev origins + the production Vercel frontend, plus any
-    FRONTEND_ORIGIN(s) from the host env.
+    """Local dev origins, plus any FRONTEND_ORIGIN(s) from the host env.
 
     Single-service deploys serve the frontend same-origin, so CORS is never
-    exercised. The split deploy (Vercel frontend → Render backend) IS cross-
-    origin with credentials, so the production origin is listed explicitly here
-    (never "*", which is invalid with allow_credentials). Set FRONTEND_ORIGIN
-    (comma-separated) to allow additional origins, e.g. preview deploys.
+    exercised. The split deploy (Vercel frontend → Render backend) is cross-
+    origin with credentials; Vercel's per-build URLs are allowed via
+    `cors_origin_regex` rather than pinned here. Set FRONTEND_ORIGIN (comma-
+    separated) to allow extra fixed origins.
     """
-    origins = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://confluence-engine-frontend-4p0kraz31-mnq1.vercel.app",
-    ]
+    origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
     extra = os.environ.get("FRONTEND_ORIGIN", "").strip()
     if extra:
         origins.extend(o.strip().rstrip("/") for o in extra.split(",") if o.strip())
@@ -47,6 +46,9 @@ class Settings(BaseSettings):
     education_path: Path = Path(__file__).resolve().parents[1] / "EDUCATION.md"
 
     cors_origins: list[str] = Field(default_factory=_default_cors_origins)
+    # Matches every Vercel deployment of the frontend (per-build URLs). Used as
+    # CORSMiddleware(allow_origin_regex=...). Override with CONFLUENCE_CORS_ORIGIN_REGEX.
+    cors_origin_regex: str = r"https://confluence-engine-frontend.*\.vercel\.app"
 
     # synthetic data / sweep parameters (deterministic)
     default_symbol: str = "MNQ"
