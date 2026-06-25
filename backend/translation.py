@@ -313,6 +313,50 @@ def risk_counterfactual() -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- #
+# glossary / playbook: one real annotated example per strategy
+# --------------------------------------------------------------------------- #
+def all_strategy_examples() -> dict[str, Any]:
+    """Find one genuine setup per strategy from generated data: a bar where THAT
+    strategy's confluence actually executed. Returns the window + the engine's
+    real overlays + the signal's levels so the frontend can annotate it. Honest:
+    a strategy with no clean example found is simply absent (never fabricated).
+    Deterministic — a fixed RNG seed picks the scan combos, so examples are stable.
+    """
+    names = all_strategies()
+    rng = random.Random(20260625)  # fixed → stable, cacheable examples (no Date use)
+    combos = [(s, tf, rng.randint(1, 9999)) for s in _SYMS for tf in _TFS for _ in range(3)]
+    found: dict[str, Any] = {}
+    for symbol, timeframe, seed in combos:
+        if len(found) == len(names):
+            break
+        sim = _live(symbol, timeframe, seed)
+        snaps: list[Any] = sim.snaps
+        for i in range(WARMUP + CONTEXT_BARS, len(snaps)):
+            snap = snaps[i]
+            for v in snap.get("signals", []):
+                nm = str(v.get("name") or "")
+                if nm in found or nm not in names:
+                    continue
+                c = v.get("confluence")
+                if c and c.get("execute") and v.get("entry") is not None:
+                    label = REGISTRY[nm][1].label
+                    candles = _candles_from_df(sim.df, i - CONTEXT_BARS, i + 1)
+                    found[nm] = {
+                        "strategy": nm, "label": label, "symbol": symbol, "timeframe": timeframe,
+                        "regime": str(snap.get("regime", "")),
+                        "candles": candles, "overlays": snap.get("overlays", []),
+                        "signal": {
+                            "name": nm, "label": label, "direction": str(v.get("direction", "flat")),
+                            "entry": v.get("entry"), "stop": v.get("stop"), "target": v.get("target"),
+                            "evidence": str(v.get("evidence") or v.get("reason") or ""),
+                        },
+                    }
+            if len(found) == len(names):
+                break
+    return {"strategies": names, "examples": found}
+
+
 def clear() -> None:
     with _conn() as c:
         c.execute("DELETE FROM setup_comparisons")

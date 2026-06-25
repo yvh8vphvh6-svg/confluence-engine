@@ -33,6 +33,7 @@ const GROUPS: { title: string; items: Item[]; tourId?: string }[] = [
     title: "Learn",
     items: [
       { href: "/glossary", label: "Glossary" },
+      { href: "/playbook", label: "Annotated Playbook" },
       { href: "/strategies", label: "Strategies" },
       { href: "/indicators", label: "Indicators" },
       { href: "/anti-patterns", label: "Anti-Patterns" },

@@ -244,6 +244,11 @@ def get_risk_counterfactual() -> dict[str, Any]:
     return translation.risk_counterfactual()
 
 
+@router.get("/strategy/examples")
+def get_strategy_examples() -> dict[str, Any]:
+    return translation.all_strategy_examples()
+
+
 @router.get("/progression")
 def get_progression() -> dict[str, Any]:
     return progression.summary()

@@ -1,14 +1,18 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { logMissedSetup } from "../../lib/api";
+import { annotationsFromSetup } from "../../lib/annotations";
 import { useSettings } from "../../lib/settings";
 import { useStore, type Direction, type PaperPosition, type StrategySignalView } from "../../lib/store";
 import type { EntryCtx, Prediction } from "../../lib/quality";
 import { useDiscipline } from "../../lib/useDiscipline";
 import { play, pause } from "../../lib/stream";
 import { fmt, usd, FACTOR_LABEL, REGIME_LABEL } from "../../lib/format";
+
+const AnnotatedChart = dynamic(() => import("../AnnotatedChart"), { ssr: false });
 
 const FACTORS = ["base", "structure", "timing", "pa"];
 const RATIONALES = ["Setup quality", "Timing", "Risk", "Gut feeling"];
@@ -46,6 +50,7 @@ export default function TeachCard() {
   const timerSecs = useSettings((s) => s.settings.decisionTimerSeconds);
   const riskPct = useSettings((s) => s.settings.riskPerTradePct);
   const pendingOverride = useStore((s) => s.pendingRevengeOverride);
+  const recentBars = useStore((s) => s.recentBars);
   const gate = useDiscipline();
 
   const [phase, setPhase] = useState<"predict" | "reveal">("reveal");
@@ -124,6 +129,20 @@ export default function TeachCard() {
   const correctStratLabel = sig?.label ?? teach.setup;
   const strategyMatch = strategyPick && sig ? strategyPick === sig.name : null;
   const pickedView = strategyPick ? tick.signals.find((s) => s.name === strategyPick) : undefined;
+
+  // Part 1 — annotated answer reveal: focus the recent window and derive marks
+  // from the engine's REAL overlays + the qualified signal's levels (no fiction).
+  const annBars = recentBars.slice(-60).map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close }));
+  const annLastTime = annBars.length ? annBars[annBars.length - 1].time : tick.ohlc.time;
+  const annotations = sig
+    ? annotationsFromSetup(
+        tick.overlays,
+        { name: sig.name, label: sig.label, direction: sig.direction, entry: sig.entry, stop: sig.stop, target: sig.target, evidence: sig.evidence, regime: tick.regime },
+        annLastTime,
+      )
+    : [];
+  const wrongPickCaption =
+    strategyPick && !strategyMatch && pickedView ? `Why not ${pickedView.label}: ${whyNot(pickedView, tick.regime)}.` : undefined;
 
   const buildPrediction = (): Prediction | null => {
     if (!confidencePrompt || !predicted) return null;
@@ -301,6 +320,12 @@ export default function TeachCard() {
               </p>
             </div>
           )}
+
+          {/* (Part 1) annotated answer reveal — marks on the real price structure */}
+          <div className="mb-3 rounded-lg border border-line bg-surface2/40 p-2.5">
+            <p className="mb-2 text-[10px] uppercase tracking-wider text-muted">On the chart — what justified this setup</p>
+            <AnnotatedChart candles={annBars} annotations={annotations} height={260} caption={wrongPickCaption} />
+          </div>
 
           {/* (2) engine reasoning for the direction — read, not noise */}
           <div className="mb-3 rounded-lg border border-line bg-surface2/40 px-3 py-2 text-xs">

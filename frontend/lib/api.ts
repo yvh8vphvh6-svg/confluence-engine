@@ -556,6 +556,21 @@ export type RiskCounterfactual =
     };
 export const getRiskCounterfactual = (s?: AbortSignal) => getJson<RiskCounterfactual>("/api/risk/counterfactual", s);
 
+// --- annotated strategy examples (glossary playbook) ---
+export type StrategyExampleSignal = {
+  name: string; label: string; direction: string;
+  entry: number | null; stop: number | null; target: number | null; evidence: string;
+};
+export type StrategyExample = {
+  strategy: string; label: string; symbol: string; timeframe: string; regime: string;
+  candles: MarketBar[];
+  overlays: { kind: string; direction: string; low: number; high: number; label: string }[];
+  signal: StrategyExampleSignal;
+};
+export type StrategyExamples = { strategies: string[]; examples: Record<string, StrategyExample> };
+export const getStrategyExamples = (s?: AbortSignal) =>
+  getJson<StrategyExamples>("/api/strategy/examples", s);
+
 // --- Phase F: social layer (all via SocialDataSource) ---
 export type TraderRank = {
   rank: number; name: string; is_user: boolean; is_example: boolean;
