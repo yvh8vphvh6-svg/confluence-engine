@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Optional
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -28,9 +28,9 @@ from ..config.settings import Settings, get_settings
 from ..schemas import SimulationTick
 from . import confluence
 from .execution import ExecutionModel
-from .simulation import Backtester, COOLDOWN_BARS, Position, WARMUP
+from .simulation import COOLDOWN_BARS, WARMUP, Backtester, Position
 from .strategies import REGISTRY, all_strategies, build_context
-from .types import INSTRUMENTS, Trade
+from .types import INSTRUMENTS
 
 log = logging.getLogger("live")
 
@@ -52,7 +52,7 @@ def _news_bars(df: pd.DataFrame, seed: int) -> set[int]:
     return out
 
 
-def _f(v, default: float = 0.0) -> float:
+def _f(v: Any, default: float = 0.0) -> float:
     return float(v) if v is not None and not (isinstance(v, float) and math.isnan(v)) else default
 
 
@@ -60,9 +60,9 @@ def _dirstr(direction: int) -> str:
     return "long" if direction > 0 else "short"
 
 
-def _in_killzone(ts) -> bool:
+def _in_killzone(ts: pd.Timestamp) -> bool:
     minutes = ts.hour * 60 + ts.minute
-    return (9 * 60 + 30 <= minutes <= 11 * 60) or (14 * 60 <= minutes <= 15 * 60 + 30)
+    return bool((9 * 60 + 30 <= minutes <= 11 * 60) or (14 * 60 <= minutes <= 15 * 60 + 30))
 
 
 class LiveSimulation:
@@ -71,11 +71,11 @@ class LiveSimulation:
         symbol: str = "MNQ",
         timeframe: str = "5m",
         seed: int = 42,
-        strategies: Optional[list[str]] = None,
-        regime_filter: Optional[str] = None,
-        regime_stats: Optional[dict] = None,
-        gate: Optional[dict] = None,
-        settings: Optional[Settings] = None,
+        strategies: list[str] | None = None,
+        regime_filter: str | None = None,
+        regime_stats: dict[str, Any] | None = None,
+        gate: dict[str, Any] | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         if symbol not in INSTRUMENTS:
@@ -103,12 +103,12 @@ class LiveSimulation:
         self.df = self.feed.ohlcv(inst, days=LIVE_DAYS, seed=self.seed, timeframe=timeframe)
         self.ctx = build_context(self.df, inst)
         self.news = _news_bars(self.df, self.seed)
-        self.snaps: list[dict] = self._build()
+        self.snaps: list[dict[str, Any]] = self._build()
         self.first_index = WARMUP
         self.bars_total = len(self.df)
 
     # ------------------------------------------------------------------ build
-    def _build(self) -> list[dict]:
+    def _build(self) -> list[dict[str, Any]]:
         df, ctx, inst = self.df, self.ctx, self.inst
         bt = Backtester(inst, seed=self.seed, news_bars=self.news)
         execu = ExecutionModel(inst, self.seed, self.news)
@@ -116,13 +116,13 @@ class LiveSimulation:
         point = inst.point_value
         starting = self.settings.starting_balance
 
-        states: dict[str, dict] = {
+        states: dict[str, dict[str, Any]] = {
             s: {"active_fvgs": [], "active_obs": [], "fvg_ptr": 0, "ob_ptr": 0}
             for s in self.armed
         }
 
-        pos: Optional[Position] = None
-        pos_strategy: Optional[str] = None
+        pos: Position | None = None
+        pos_strategy: str | None = None
         balance = starting
         consec_losses = 0
         cooldown_until = -1
@@ -131,8 +131,8 @@ class LiveSimulation:
         day_pnl = 0.0
         day_locked = False
         trades_today = 0
-        recent_bos: list[dict] = []
-        recent_trade_dicts: list[dict] = []
+        recent_bos: list[dict[str, Any]] = []
+        recent_trade_dicts: list[dict[str, Any]] = []
 
         # incremental performance aggregates
         n_tr = 0
@@ -152,10 +152,10 @@ class LiveSimulation:
         # sliding overlay zone windows (pointers into ctx.fvgs / ctx.obs)
         fvg_ptr = 0
         ob_ptr = 0
-        active_fvg: list[dict] = []
-        active_ob: list[dict] = []
+        active_fvg: list[dict[str, Any]] = []
+        active_ob: list[dict[str, Any]] = []
 
-        snaps: list[dict] = []
+        snaps: list[dict[str, Any]] = []
         n = len(df)
         opens = df["open"].to_numpy()
         highs = df["high"].to_numpy()
@@ -179,8 +179,8 @@ class LiveSimulation:
             regime_blocked = self.regime_filter is not None and regime != self.regime_filter
 
             # ---- evaluate every armed strategy --------------------------------
-            signal_views: list[dict] = []
-            entry_candidates: list[tuple] = []
+            signal_views: list[dict[str, Any]] = []
+            entry_candidates: list[tuple[Any, ...]] = []
             for s in self.armed:
                 fn, meta = REGISTRY[s]
                 st = states[s]
@@ -202,9 +202,9 @@ class LiveSimulation:
                 reg_n = (rs["n"] if rs else 0)
                 reg_wr = (rs["win_rate"] if rs else None)
                 reg_exp = (rs.get("expectancy_r") if rs else None)
-                conf_val = conf_view["confidence"] if conf_view else 0.0
-                sample_factor = min(1.0, reg_n / 100.0)
-                score = round(conf_val * max(reg_exp or 0.0, 0.0) * sample_factor, 5) if active else 0.0
+                conf_val = float(cast(float, conf_view["confidence"])) if conf_view else 0.0
+                sample_factor = min(1.0, float(reg_n) / 100.0)
+                score = round(float(conf_val) * max(float(reg_exp or 0.0), 0.0) * sample_factor, 5) if active else 0.0
                 promoted = bool(self.gate.get(s, False))
                 executes = bool(conf_view and conf_view["execute"])
                 # "qualified" = a genuinely worth-teaching setup: confluence executes
@@ -319,13 +319,15 @@ class LiveSimulation:
 
             # ---- sliding overlay zones (cheap; pointer + small window) --------
             while fvg_ptr < len(ctx_fvgs) and ctx_fvgs[fvg_ptr]["created_at"] <= i:
-                active_fvg.append(ctx_fvgs[fvg_ptr]); fvg_ptr += 1
+                active_fvg.append(ctx_fvgs[fvg_ptr])
+                fvg_ptr += 1
             active_fvg = [z for z in active_fvg if i - z["created_at"] <= ZONE_TTL_BARS][-MAX_ZONE_OVERLAYS:]
             while ob_ptr < len(ctx_obs) and ctx_obs[ob_ptr]["created_at"] <= i:
-                active_ob.append(ctx_obs[ob_ptr]); ob_ptr += 1
+                active_ob.append(ctx_obs[ob_ptr])
+                ob_ptr += 1
             active_ob = [z for z in active_ob if i - z["created_at"] <= ZONE_TTL_BARS][-MAX_ZONE_OVERLAYS:]
 
-            overlays: list[dict] = []
+            overlays: list[dict[str, Any]] = []
             for z in active_fvg:
                 overlays.append({"kind": "FVG", "direction": _dirstr(z["dir"]),
                                  "start_time": int(index[z["created_at"]].timestamp()), "end_time": tsx,
@@ -423,27 +425,27 @@ class LiveSimulation:
         return snaps
 
     # --------------------------------------------------------------- helpers
-    def _primary_confluence(self, views: list[dict], active: Optional[str]) -> dict:
+    def _primary_confluence(self, views: list[dict[str, Any]], active: str | None) -> dict[str, Any]:
         if active:
             for v in views:
                 if v["name"] == active and v["confluence"]:
-                    return v["confluence"]
+                    return v["confluence"]  # type: ignore[no-any-return]  # dict value is a confluence dict
         best = max((v for v in views if v["confluence"]),
                    key=lambda v: v["confluence"]["confidence"], default=None)
         if best and best["confluence"]:
-            return best["confluence"]
+            return best["confluence"]  # type: ignore[no-any-return]  # dict value is a confluence dict
         return {"execute": False, "confidence": 0.0, "threshold": confluence.THRESHOLD_NORMAL,
                 "missing_factors": list(confluence.WEIGHTS.keys()),
                 "score_breakdown": {k: 0.0 for k in confluence.WEIGHTS}}
 
-    def _unrealized(self, pos: Optional[Position], close: float) -> float:
+    def _unrealized(self, pos: Position | None, close: float) -> float:
         if pos is None:
             return 0.0
         leg = (close - pos.entry_price) * pos.direction * self.inst.point_value * pos.contracts
         return leg + pos.realized_pnl - pos.commission_paid
 
     # --------------------------------------------------------------- meta
-    def meta(self) -> dict:
+    def meta(self) -> dict[str, Any]:
         return {
             "type": "meta", "symbol": self.symbol, "timeframe": self.timeframe, "seed": self.seed,
             "instrument": {
@@ -460,14 +462,14 @@ class LiveSimulation:
             ],
         }
 
-    def tick_at(self, n_index: int, playing: bool) -> Optional[SimulationTick]:
+    def tick_at(self, n_index: int, playing: bool) -> SimulationTick | None:
         """Materialise the typed tick lazily (one per streamed bar)."""
         if not self.snaps:
             return None
         n_index = max(0, min(n_index, len(self.snaps) - 1))
         return SimulationTick.model_validate({**self.snaps[n_index], "playing": playing})
 
-    def window(self, cursor: int, size: int = 400) -> list[dict]:
+    def window(self, cursor: int, size: int = 400) -> list[dict[str, Any]]:
         """Candle window ending at cursor (for chart redraws after a seek)."""
         if not self.snaps:
             return []
@@ -479,7 +481,7 @@ class LiveSimulation:
     def length(self) -> int:
         return len(self.snaps)
 
-    def fresh_qualified_at(self, index: int) -> Optional[str]:
+    def fresh_qualified_at(self, index: int) -> str | None:
         """Return the qualified-setup name at `index` only if it is a *fresh*
         qualification edge (different from the previous bar) — used by the player
         to auto-pause once per new teaching moment, not every bar."""

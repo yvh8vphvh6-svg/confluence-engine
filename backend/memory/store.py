@@ -7,7 +7,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ..engine.simulation import BacktestResult
 
 DEFAULT_DB = "trading_memory.db"
 
@@ -52,7 +56,7 @@ class MemoryStore:
         self.conn.executescript(SCHEMA)
         self.conn.commit()
 
-    def save_run(self, result, monte_carlo: dict | None = None) -> int:
+    def save_run(self, result: BacktestResult, monte_carlo: dict[str, Any] | None = None) -> int:
         m = result.metrics
         mc = monte_carlo or {}
         cur = self.conn.execute(
@@ -61,13 +65,13 @@ class MemoryStore:
                 profit_factor, expectancy_r, max_drawdown_r, max_drawdown_pct, sharpe,
                 net_pnl_dollars, sufficient_sample, mc_p95_dd_pct, mc_promote, metrics_json)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (datetime.now(timezone.utc).isoformat(), result.strategy, result.symbol,
+            (datetime.now(UTC).isoformat(), result.strategy, result.symbol,
              result.timeframe, result.seed, m.get("n_trades"), m.get("win_rate"),
              m.get("profit_factor"), m.get("expectancy_r"), m.get("max_drawdown_r"),
              m.get("max_drawdown_pct"), m.get("sharpe"), m.get("net_pnl_dollars"),
              int(bool(m.get("sufficient_sample"))), mc.get("p95_dd_pct"),
              int(bool(mc.get("promote"))), json.dumps(m)))
-        run_id = cur.lastrowid
+        run_id = int(cur.lastrowid or 0)
         self.conn.execute("DELETE FROM trades WHERE run_id=?", (run_id,))
         self.conn.executemany(
             """INSERT INTO trades
@@ -82,17 +86,19 @@ class MemoryStore:
         self.conn.commit()
         return run_id
 
-    def leaderboard(self, symbol: str | None = None, timeframe: str | None = None):
+    def leaderboard(self, symbol: str | None = None, timeframe: str | None = None) -> list[dict[str, Any]]:
         q = "SELECT * FROM runs"
         clauses, params = [], []
         if symbol:
-            clauses.append("symbol=?"); params.append(symbol)
+            clauses.append("symbol=?")
+            params.append(symbol)
         if timeframe:
-            clauses.append("timeframe=?"); params.append(timeframe)
+            clauses.append("timeframe=?")
+            params.append(timeframe)
         if clauses:
             q += " WHERE " + " AND ".join(clauses)
         q += " ORDER BY expectancy_r DESC NULLS LAST"
         return [dict(r) for r in self.conn.execute(q, params).fetchall()]
 
-    def close(self):
+    def close(self) -> None:
         self.conn.close()

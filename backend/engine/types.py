@@ -5,9 +5,8 @@ contract is explicit and mypy-checkable. No dicts-as-structs in hot paths.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
-from typing import Optional
-
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
 # --- instruments -----------------------------------------------------------
 
@@ -103,7 +102,7 @@ class Trade:
     exit_reason: str               # "target" | "stop" | "trail" | "eod" | "partial+trail"
     bars_held: int
 
-    def to_row(self) -> dict:
+    def to_row(self) -> dict[str, Any]:
         return asdict(self)
 
 

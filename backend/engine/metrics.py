@@ -8,6 +8,7 @@ Drawdown is reported two ways:
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import numpy as np
 
@@ -38,7 +39,7 @@ def _max_dd_pct(rs: list[float], f: float = RISK_FRACTION) -> float:
     return float(max_dd)
 
 
-def compute_metrics(trades: list[Trade]) -> dict:
+def compute_metrics(trades: list[Trade]) -> dict[str, Any]:
     n = len(trades)
     if n == 0:
         return {"n_trades": 0, "win_rate": None, "profit_factor": None,
@@ -58,7 +59,7 @@ def compute_metrics(trades: list[Trade]) -> dict:
     std_r = float(np.std(rs, ddof=1)) if n > 1 else 0.0
     sharpe = (mean_r / std_r * math.sqrt(n)) if std_r > 0 else 0.0
 
-    by_regime: dict[str, dict] = {}
+    by_regime: dict[str, dict[str, Any]] = {}
     for reg in sorted({t.regime_at_entry for t in trades}):
         sub = [t.r_multiple for t in trades if t.regime_at_entry == reg]
         w = [r for r in sub if r > 0]
@@ -88,7 +89,7 @@ def compute_metrics(trades: list[Trade]) -> dict:
     }
 
 
-def monte_carlo(trades: list[Trade], n_runs: int = 1000, seed: int = 7) -> dict:
+def monte_carlo(trades: list[Trade], n_runs: int = 1000, seed: int = 7) -> dict[str, Any]:
     """Shuffle the realised R sequence n_runs times; report the distribution of
     max drawdown under fixed-fractional sizing and the share of runs that stay
     inside the 15% promotion limit."""

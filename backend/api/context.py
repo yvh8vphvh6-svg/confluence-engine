@@ -6,7 +6,7 @@ what invalidates it. SYNTHETIC data — labelled as such; not a forecast.
 """
 from __future__ import annotations
 
-import numpy as np
+from typing import Any
 
 from ..data.generator import generate_ohlcv, resample_ohlcv
 from ..engine.strategies import build_context
@@ -34,7 +34,7 @@ def _next_event(minute: int) -> str:
     return "session closed"
 
 
-def market_context(symbol: str, timeframe: str, seed: int = 42) -> dict:
+def market_context(symbol: str, timeframe: str, seed: int = 42) -> dict[str, Any]:
     if symbol not in INSTRUMENTS:
         raise ValueError(f"unknown instrument {symbol!r}")
     if timeframe not in ("1m", "5m", "15m", "30m", "1h"):

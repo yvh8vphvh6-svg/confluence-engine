@@ -9,8 +9,9 @@ Stops/targets are expressed so that the simulator can compute an R multiple as
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -43,8 +44,8 @@ class Ctx:
     or_high: np.ndarray
     or_low: np.ndarray
     or_done: np.ndarray
-    fvgs: list
-    obs: list
+    fvgs: list[dict[str, Any]]
+    obs: list[dict[str, Any]]
     regimes: list[str]
     avg_daily_volume: float
 
@@ -77,8 +78,8 @@ def _atr(ctx: Ctx, i: int) -> float:
     return a if (a is not None and not np.isnan(a) and a > 0) else float("nan")
 
 
-def _mk(strategy, direction, entry, stop, ctx, i, order_type,
-        structure, timing, reason, target=None) -> Optional[Signal]:
+def _mk(strategy: str, direction: int, entry: float, stop: float, ctx: Ctx, i: int, order_type: str,
+        structure: bool, timing: bool, reason: str, target: float | None = None) -> Signal | None:
     """Assemble a Signal, computing target from TP_R if not supplied,
     and attaching the four confluence factor booleans."""
     risk = abs(entry - stop)
@@ -98,7 +99,7 @@ def _mk(strategy, direction, entry, stop, ctx, i, order_type,
 # --------------------------------------------------------------------------
 # 1. Opening Range Breakout
 # --------------------------------------------------------------------------
-def orb(df, i, ctx: Ctx, state) -> Optional[Signal]:
+def orb(df: pd.DataFrame, i: int, ctx: Ctx, state: dict[str, Any]) -> Signal | None:
     if not ctx.or_done[i] or np.isnan(ctx.or_high[i]):
         return None
     ts = df.index[i]
@@ -108,7 +109,8 @@ def orb(df, i, ctx: Ctx, state) -> Optional[Signal]:
     minutes_since_open = (ts.hour * 60 + ts.minute) - (9 * 60 + 30)
     if minutes_since_open > 150:  # only the first 2.5h after OR closes
         return None
-    c = df["close"].iat[i]; pc = df["close"].iat[i - 1]
+    c = df["close"].iat[i]
+    pc = df["close"].iat[i - 1]
     orh, orl = ctx.or_high[i], ctx.or_low[i]
     long_break = pc <= orh < c
     short_break = pc >= orl > c
@@ -129,7 +131,7 @@ def orb(df, i, ctx: Ctx, state) -> Optional[Signal]:
 # --------------------------------------------------------------------------
 # 2. Fair Value Gap retest (limit)
 # --------------------------------------------------------------------------
-def fvg_retest(df, i, ctx: Ctx, state) -> Optional[Signal]:
+def fvg_retest(df: pd.DataFrame, i: int, ctx: Ctx, state: dict[str, Any]) -> Signal | None:
     low_i, high_i, c = df["low"].iat[i], df["high"].iat[i], df["close"].iat[i]
     for z in state["active_fvgs"]:
         d = z["dir"]
@@ -157,7 +159,7 @@ def fvg_retest(df, i, ctx: Ctx, state) -> Optional[Signal]:
 # --------------------------------------------------------------------------
 # 3. Order Block retest (limit)
 # --------------------------------------------------------------------------
-def ob_retest(df, i, ctx: Ctx, state) -> Optional[Signal]:
+def ob_retest(df: pd.DataFrame, i: int, ctx: Ctx, state: dict[str, Any]) -> Signal | None:
     low_i, high_i, c = df["low"].iat[i], df["high"].iat[i], df["close"].iat[i]
     for z in state["active_obs"]:
         d = z["dir"]
@@ -165,9 +167,11 @@ def ob_retest(df, i, ctx: Ctx, state) -> Optional[Signal]:
         if not tapped:
             continue
         if d > 0:
-            entry = z["high"]; stop = z["low"]
+            entry = z["high"]
+            stop = z["low"]
         else:
-            entry = z["low"]; stop = z["high"]
+            entry = z["low"]
+            stop = z["high"]
         structure = (c > ctx.last_sl[i]) if d > 0 else (c < ctx.last_sh[i])
         timing = rg.in_killzone(df.index[i])
         sig = _mk("OB_RETEST", d, entry, stop, ctx, i, "limit", structure, timing,
@@ -181,7 +185,7 @@ def ob_retest(df, i, ctx: Ctx, state) -> Optional[Signal]:
 # --------------------------------------------------------------------------
 # 4. Break of Structure continuation (pullback, market)
 # --------------------------------------------------------------------------
-def bos_continuation(df, i, ctx: Ctx, state) -> Optional[Signal]:
+def bos_continuation(df: pd.DataFrame, i: int, ctx: Ctx, state: dict[str, Any]) -> Signal | None:
     c = df["close"].iat[i]
     sh, sl = ctx.last_sh[i], ctx.last_sl[i]
     pend = state.get("bos_pending")
@@ -196,7 +200,8 @@ def bos_continuation(df, i, ctx: Ctx, state) -> Optional[Signal]:
         if pend and i - pend["bar"] > 12:
             state["bos_pending"] = None
         return None
-    d = pend["dir"]; lvl = pend["level"]
+    d = pend["dir"]
+    lvl = pend["level"]
     atrv = _atr(ctx, i)
     near = abs(c - lvl) < atrv * 0.4
     if not near:
@@ -217,7 +222,7 @@ def bos_continuation(df, i, ctx: Ctx, state) -> Optional[Signal]:
 # --------------------------------------------------------------------------
 # 5. Breakout-retest of prior-day high/low (market)
 # --------------------------------------------------------------------------
-def breakout_retest(df, i, ctx: Ctx, state) -> Optional[Signal]:
+def breakout_retest(df: pd.DataFrame, i: int, ctx: Ctx, state: dict[str, Any]) -> Signal | None:
     c = df["close"].iat[i]
     pdh, pdl = ctx.pdh[i], ctx.pdl[i]
     atrv = _atr(ctx, i)
@@ -232,7 +237,8 @@ def breakout_retest(df, i, ctx: Ctx, state) -> Optional[Signal]:
         if pend and i - pend["bar"] > 15:
             state["brk_pending"] = None
         return None
-    d = pend["dir"]; lvl = pend["level"]
+    d = pend["dir"]
+    lvl = pend["level"]
     near = abs(c - lvl) < atrv * 0.4
     if not near:
         return None
@@ -250,7 +256,7 @@ def breakout_retest(df, i, ctx: Ctx, state) -> Optional[Signal]:
 # --------------------------------------------------------------------------
 # 6. VWAP mean reversion (ranging only, limit)
 # --------------------------------------------------------------------------
-def vwap_reversion(df, i, ctx: Ctx, state) -> Optional[Signal]:
+def vwap_reversion(df: pd.DataFrame, i: int, ctx: Ctx, state: dict[str, Any]) -> Signal | None:
     if ctx.regimes[i] != "ranging":
         return None
     c = df["close"].iat[i]
@@ -281,10 +287,12 @@ def vwap_reversion(df, i, ctx: Ctx, state) -> Optional[Signal]:
 # --------------------------------------------------------------------------
 # 7. EMA trend pullback (trending only, market)
 # --------------------------------------------------------------------------
-def ema_trend_pullback(df, i, ctx: Ctx, state) -> Optional[Signal]:
+def ema_trend_pullback(df: pd.DataFrame, i: int, ctx: Ctx, state: dict[str, Any]) -> Signal | None:
     if ctx.regimes[i] != "trending":
         return None
-    c = df["close"].iat[i]; lo = df["low"].iat[i]; hi = df["high"].iat[i]
+    c = df["close"].iat[i]
+    lo = df["low"].iat[i]
+    hi = df["high"].iat[i]
     e20, e50 = ctx.ema20[i], ctx.ema50[i]
     atrv = _atr(ctx, i)
     if np.isnan(e20) or np.isnan(e50) or np.isnan(atrv):
@@ -310,9 +318,11 @@ def ema_trend_pullback(df, i, ctx: Ctx, state) -> Optional[Signal]:
 # --------------------------------------------------------------------------
 # 8. Liquidity sweep reversal (ICT stop-hunt, market)
 # --------------------------------------------------------------------------
-def liquidity_sweep(df, i, ctx: Ctx, state) -> Optional[Signal]:
-    o = df["open"].iat[i]; h = df["high"].iat[i]
-    l = df["low"].iat[i]; c = df["close"].iat[i]
+def liquidity_sweep(df: pd.DataFrame, i: int, ctx: Ctx, state: dict[str, Any]) -> Signal | None:
+    o = df["open"].iat[i]
+    h = df["high"].iat[i]
+    lo = df["low"].iat[i]
+    c = df["close"].iat[i]
     sh, sl = ctx.last_sh[i], ctx.last_sl[i]
     atrv = _atr(ctx, i)
     if np.isnan(atrv):
@@ -323,10 +333,10 @@ def liquidity_sweep(df, i, ctx: Ctx, state) -> Optional[Signal]:
         entry = c
         stop = h + 0.2 * atrv
     # sweep below swing low then close back above -> long
-    elif not np.isnan(sl) and l < sl and c > sl and c > o:
+    elif not np.isnan(sl) and lo < sl and c > sl and c > o:
         d = 1
         entry = c
-        stop = l - 0.2 * atrv
+        stop = lo - 0.2 * atrv
     else:
         return None
     structure = True            # liquidity was taken
@@ -338,7 +348,7 @@ def liquidity_sweep(df, i, ctx: Ctx, state) -> Optional[Signal]:
 # --------------------------------------------------------------------------
 # registry
 # --------------------------------------------------------------------------
-StrategyFn = Callable[[pd.DataFrame, int, Ctx, dict], Optional[Signal]]
+StrategyFn = Callable[[pd.DataFrame, int, Ctx, dict[str, Any]], Signal | None]
 
 REGISTRY: dict[str, tuple[StrategyFn, StrategyMeta]] = {
     "ORB": (orb, StrategyMeta(

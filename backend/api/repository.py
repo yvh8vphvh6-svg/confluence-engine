@@ -75,7 +75,8 @@ def leaderboard() -> list[dict[str, Any]]:
 
 def _metrics_json(r: dict[str, Any]) -> dict[str, Any]:
     try:
-        return json.loads(r.get("metrics_json") or "{}")
+        loaded = json.loads(r.get("metrics_json") or "{}")
+        return loaded if isinstance(loaded, dict) else {}
     except (json.JSONDecodeError, TypeError):
         return {}
 
@@ -83,7 +84,7 @@ def _metrics_json(r: dict[str, Any]) -> dict[str, Any]:
 def strategies() -> list[dict[str, Any]]:
     """The 8 strategies with their meta and aggregated real stats."""
     runs = _runs()
-    by_strat: dict[str, list[dict]] = {}
+    by_strat: dict[str, list[dict[str, Any]]] = {}
     for r in runs:
         by_strat.setdefault(r["strategy"], []).append(r)
     out = []
@@ -125,7 +126,7 @@ def strategy_detail(name: str) -> dict[str, Any] | None:
     if detail is None:
         return None
     # by-regime breakdown from the richest run's metrics_json
-    by_regime: dict[str, dict] = {}
+    by_regime: dict[str, dict[str, Any]] = {}
     best_run = None
     for r in _runs():
         if r["strategy"] != name:

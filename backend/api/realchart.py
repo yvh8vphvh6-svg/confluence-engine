@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 import httpx
 
@@ -29,7 +30,7 @@ YAHOO_PARAMS = {
 _UA = "Mozilla/5.0 (compatible; ConfluenceEngine/3.0; +https://example.invalid)"
 
 
-def real_chart(symbol: str, timeframe: str) -> dict:
+def real_chart(symbol: str, timeframe: str) -> dict[str, Any]:
     how = ("Real MNQ/MGC data flows through the pluggable adapter. Yahoo Finance "
            "(delayed) is used by default and needs no key; for live/official data, "
            "wire a provider (IBKR / Tradovate / Databento) via CONFLUENCE_DATA_FEED "
@@ -54,16 +55,16 @@ def real_chart(symbol: str, timeframe: str) -> dict:
             raise ValueError("empty result")
         ts = result["timestamp"]
         q = result["indicators"]["quote"][0]
-        o, h, l, c = q["open"], q["high"], q["low"], q["close"]
+        o, h, lo, c = q["open"], q["high"], q["low"], q["close"]
         vol = q.get("volume") or [0] * len(ts)
         candles = []
         for i in range(len(ts)):
-            if None in (o[i], h[i], l[i], c[i]):
+            if None in (o[i], h[i], lo[i], c[i]):
                 continue
             candles.append({
                 "time": int(ts[i]),
                 "open": round(float(o[i]), 4), "high": round(float(h[i]), 4),
-                "low": round(float(l[i]), 4), "close": round(float(c[i]), 4),
+                "low": round(float(lo[i]), 4), "close": round(float(c[i]), 4),
                 "volume": float(vol[i] or 0),
             })
         if not candles:

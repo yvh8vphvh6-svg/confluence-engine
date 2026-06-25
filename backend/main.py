@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,8 +33,8 @@ settings = get_settings()
 
 _sweep_started = False
 _sweep_done = threading.Event()
-_assistant: dict = {"assistant_key_present": False, "assistant_status": "checking",
-                    "model": settings.coach_model, "detail": ""}
+_assistant: dict[str, Any] = {"assistant_key_present": False, "assistant_status": "checking",
+                              "model": settings.coach_model, "detail": ""}
 
 
 def _run_sweep() -> None:
@@ -78,7 +80,7 @@ def _check_assistant() -> None:
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     _maybe_start_sweep()
     # key presence is known immediately (no network); confirm reachability off-thread
     _assistant["assistant_key_present"] = bool(_api_key())
@@ -105,7 +107,7 @@ app.include_router(data_router)
 
 
 @app.get("/healthz", tags=["system"])
-async def healthz() -> dict:
+async def healthz() -> dict[str, Any]:
     return {
         "status": "ok",
         "assistant_key_present": bool(_api_key()),

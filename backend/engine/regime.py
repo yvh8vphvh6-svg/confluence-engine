@@ -25,7 +25,8 @@ def classify_regime(adx_v: float, atr_v: float, atr_avg: float,
     return "low_vol"
 
 
-def regime_series(df: pd.DataFrame, adx_v, atr_v, atr_avg, vwap) -> list[str]:
+def regime_series(df: pd.DataFrame, adx_v: np.ndarray, atr_v: np.ndarray,
+                  atr_avg: np.ndarray, vwap: np.ndarray) -> list[str]:
     vol = df["volume"].to_numpy()
     vol_avg = pd.Series(vol).rolling(20, min_periods=1).mean().to_numpy()
     vwap_slope = np.zeros(len(df))
@@ -41,19 +42,21 @@ def pa_confirm(df: pd.DataFrame, i: int, direction: int, vol_avg: float) -> bool
       close in the trade direction within the bar's range (closes strong),
       a rejection wick on the opposing side, and a volume spike.
     """
-    o = df["open"].iat[i]; h = df["high"].iat[i]
-    l = df["low"].iat[i]; c = df["close"].iat[i]
+    o = df["open"].iat[i]
+    h = df["high"].iat[i]
+    lo = df["low"].iat[i]
+    c = df["close"].iat[i]
     v = df["volume"].iat[i]
-    rng = max(h - l, 1e-9)
+    rng = max(h - lo, 1e-9)
     body_top = max(o, c)
     body_bot = min(o, c)
     upper_wick = h - body_top
-    lower_wick = body_bot - l
+    lower_wick = body_bot - lo
     closes_strong = (c > o) if direction > 0 else (c < o)
     # rejection wick on the opposing side (>= 30% of range)
     rejection = (lower_wick / rng >= 0.30) if direction > 0 else (upper_wick / rng >= 0.30)
     vol_spike = v > 1.4 * vol_avg
-    close_pos = (c - l) / rng
+    close_pos = (c - lo) / rng
     located = close_pos > 0.6 if direction > 0 else close_pos < 0.4
     return bool(closes_strong and rejection and vol_spike and located)
 
@@ -64,7 +67,7 @@ def in_killzone(ts: pd.Timestamp) -> bool:
     minutes = ts.hour * 60 + ts.minute
     open_kz = 9 * 60 + 30 <= minutes <= 11 * 60          # 09:30-11:00
     pm_kz = 14 * 60 <= minutes <= 15 * 60 + 30           # 14:00-15:30
-    return open_kz or pm_kz
+    return bool(open_kz or pm_kz)
 
 
 def in_ote(price: float, leg_low: float, leg_high: float, direction: int) -> bool:

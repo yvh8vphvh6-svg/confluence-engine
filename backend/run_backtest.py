@@ -18,8 +18,10 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import pandas as pd
 
 from backend.data.generator import generate_ohlcv, resample_ohlcv
 from backend.engine import metrics as metrics_mod
@@ -33,10 +35,10 @@ DASHBOARD_ASSET = "MNQ"
 DASHBOARD_TF = "15m"
 
 
-def news_bars_for(df, seed: int) -> set[int]:
+def news_bars_for(df: pd.DataFrame, seed: int) -> set[int]:
     """Deterministic high-impact 'news' bars (~10:00 ET on ~25% of days)."""
     rng = np.random.default_rng(seed + 777)
-    out = set()
+    out: set[int] = set()
     for i in range(len(df)):
         ts = df.index[i]
         if ts.hour == 10 and ts.minute == 0 and rng.random() < 0.25:
@@ -44,12 +46,12 @@ def news_bars_for(df, seed: int) -> set[int]:
     return out
 
 
-def run_sweep(days: int, timeframes: list[str], seed: int, persist: bool = True):
+def run_sweep(days: int, timeframes: list[str], seed: int, persist: bool = True) -> list[dict[str, Any]]:
     OUTPUT_DIR.mkdir(exist_ok=True)
     store = MemoryStore(str(OUTPUT_DIR / "trading_memory.db")) if persist else None
 
-    results = []
-    dashboard_payload = None
+    results: list[dict[str, Any]] = []
+    dashboard_payload: dict[str, Any] | None = None
 
     for symbol, inst in INSTRUMENTS.items():
         df_1m = generate_ohlcv(inst, days=days, seed=seed)
@@ -99,15 +101,15 @@ def run_sweep(days: int, timeframes: list[str], seed: int, persist: bool = True)
     return results
 
 
-def _fmt(v):
+def _fmt(v: float | None) -> str:
     return f"{v:5.2f}" if isinstance(v, (int, float)) else " n/a "
 
 
-def _pct(v):
+def _pct(v: float | None) -> str:
     return f"{v*100:5.1f}%" if isinstance(v, (int, float)) else " n/a "
 
 
-def _print_leaderboard(store: MemoryStore):
+def _print_leaderboard(store: MemoryStore) -> None:
     print("\n=== LEADERBOARD (by expectancy R, n>=100 only) ===")
     rows = [r for r in store.leaderboard() if (r["n_trades"] or 0) >= 100]
     for r in rows[:15]:
@@ -118,7 +120,8 @@ def _print_leaderboard(store: MemoryStore):
         print("(no strategy reached the n>=100 sample gate at these settings)")
 
 
-def _build_dashboard_payload(df, symbol, tf, results, store):
+def _build_dashboard_payload(df: pd.DataFrame, symbol: str, tf: str,
+                             results: list[dict[str, Any]], store: MemoryStore | None) -> dict[str, Any]:
     ohlc = [{"time": int(ts.timestamp()), "open": float(r.open), "high": float(r.high),
              "low": float(r.low), "close": float(r.close)}
             for ts, r in df.iterrows()]
@@ -135,7 +138,7 @@ def _build_dashboard_payload(df, symbol, tf, results, store):
             "leaderboard": [r for r in results]}
 
 
-def verify_determinism(days: int, timeframes: list[str], seed: int):
+def verify_determinism(days: int, timeframes: list[str], seed: int) -> None:
     """Prove determinism two ways:
     1. In-process: run the sweep twice in this interpreter.
     2. Cross-process: run a second sweep in a *fresh* subprocess forced to use a
@@ -167,7 +170,7 @@ def verify_determinism(days: int, timeframes: list[str], seed: int):
     if res.returncode != 0:
         print("subprocess failed:\n", res.stderr[-2000:])
         raise SystemExit(1)
-    line = [l for l in res.stdout.splitlines() if l.startswith("@@@")][-1][3:]
+    line = [ln for ln in res.stdout.splitlines() if ln.startswith("@@@")][-1][3:]
     cross = {tuple(d["k"]): d["m"] for d in json.loads(line)}
     xmis = [k for k in ka if json.dumps(ka[k], sort_keys=True) != json.dumps(cross.get(k), sort_keys=True)]
     if xmis:
@@ -177,7 +180,7 @@ def verify_determinism(days: int, timeframes: list[str], seed: int):
     print(f"DETERMINISTIC: {len(ka)} runs reproducible in-process AND across processes.")
 
 
-def main():
+def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--days", type=int, default=150)
     p.add_argument("--timeframes", nargs="+", default=["5m", "15m"])
@@ -197,7 +200,7 @@ def main():
 # ---------------------------------------------------------------------------
 # Self-contained dashboard (embedded data; opens with no server)
 # ---------------------------------------------------------------------------
-def _write_dashboard(payload: dict):
+def _write_dashboard(payload: dict[str, Any]) -> None:
     html = _DASHBOARD_TEMPLATE.replace("__PAYLOAD__", json.dumps(payload))
     (OUTPUT_DIR / "dashboard.html").write_text(html, encoding="utf-8")
 

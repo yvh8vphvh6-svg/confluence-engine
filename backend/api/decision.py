@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import random
 import sqlite3
+from typing import Any
 
+import pandas as pd
 from pydantic import BaseModel
 
 from ..data.generator import generate_ohlcv, resample_ohlcv
 from ..engine.simulation import WARMUP
 from ..engine.strategies import build_context
-from ..engine.types import INSTRUMENTS
+from ..engine.types import INSTRUMENTS, Instrument
 from ..journal import DB_PATH
 
 DAYS = 60
@@ -51,7 +53,7 @@ class NewResponse(BaseModel):
     symbol: str
     timeframe: str
     decision_index: int
-    candles: list[dict]
+    candles: list[dict[str, Any]]
     atr: float
     regime: str
     suggested_stop_pts: float
@@ -67,7 +69,7 @@ class ScoreRequest(BaseModel):
     target: float | None = None
 
 
-def _candles(df, lo: int, hi: int) -> list[dict]:
+def _candles(df: pd.DataFrame, lo: int, hi: int) -> list[dict[str, Any]]:
     out = []
     for k in range(lo, hi):
         ts = df.index[k]
@@ -78,7 +80,7 @@ def _candles(df, lo: int, hi: int) -> list[dict]:
     return out
 
 
-def _build(symbol: str, timeframe: str, seed: int):
+def _build(symbol: str, timeframe: str, seed: int) -> tuple[Instrument, pd.DataFrame]:
     inst = INSTRUMENTS[symbol]
     df = resample_ohlcv(generate_ohlcv(inst, days=DAYS, seed=seed), timeframe)
     return inst, df
@@ -113,10 +115,12 @@ def new_scenario(difficulty: str) -> NewResponse:
     raise ValueError("could not build a decision scenario")
 
 
-def _simulate(df, i: int, direction: int, entry: float, stop: float, target: float):
+def _simulate(df: pd.DataFrame, i: int, direction: int, entry: float, stop: float,
+              target: float) -> tuple[str, float, int]:
     """Walk forward up to HORIZON bars; return (outcome, exit_price, bars)."""
     for k in range(i + 1, min(i + 1 + HORIZON, len(df))):
-        hi = float(df.iloc[k].high); lo = float(df.iloc[k].low)
+        hi = float(df.iloc[k].high)
+        lo = float(df.iloc[k].low)
         if direction > 0:
             if lo <= stop:
                 return "stop", stop, k - i
@@ -130,14 +134,14 @@ def _simulate(df, i: int, direction: int, entry: float, stop: float, target: flo
     return "timeout", float(df.iloc[min(i + HORIZON, len(df) - 1)].close), HORIZON
 
 
-def score(req: ScoreRequest) -> dict:
+def score(req: ScoreRequest) -> dict[str, Any]:
     try:
         parts = req.id.split(":")
         symbol, timeframe, seed_s, idx_s = parts[0], parts[1], parts[2], parts[3]
         difficulty = parts[4] if len(parts) > 4 else "?"
         seed, i = int(seed_s), int(idx_s)
-    except (ValueError, IndexError):
-        raise ValueError("bad scenario id")
+    except (ValueError, IndexError) as exc:
+        raise ValueError("bad scenario id") from exc
     inst, df = _build(symbol, timeframe, seed)
     entry = float(df.iloc[i].close)
     reveal = _candles(df, i + 1, min(i + 1 + HORIZON, len(df)))
@@ -180,13 +184,17 @@ def score(req: ScoreRequest) -> dict:
             r_mult = round((exit_price - entry) * direction / risk, 3) if risk > 0 else 0.0
             # direction scoring (0-60)
             if outcome == "target":
-                dir_score = 60; notes.append("Target hit before stop — clean read.")
+                dir_score = 60
+                notes.append("Target hit before stop — clean read.")
             elif outcome == "timeout" and r_mult > 0:
-                dir_score = 40; notes.append("Moved your way but didn't reach target in time.")
+                dir_score = 40
+                notes.append("Moved your way but didn't reach target in time.")
             elif outcome == "timeout":
-                dir_score = 25; notes.append("Chopped sideways — no follow-through.")
+                dir_score = 25
+                notes.append("Chopped sideways — no follow-through.")
             else:
-                dir_score = 0; notes.append("Stopped out — the read was wrong or early.")
+                dir_score = 0
+                notes.append("Stopped out — the read was wrong or early.")
         else:
             outcome = "invalid"
             notes.append("Trade not simulated — fix the stop/target sides.")
@@ -194,9 +202,11 @@ def score(req: ScoreRequest) -> dict:
         # Wait / Pass — reward patience when there was no clean move to miss
         outcome = "no-trade"
         if abs(fwd) < 0.6 * atr:
-            dir_score = 55; notes.append("Good patience — there was no clean move to catch.")
+            dir_score = 55
+            notes.append("Good patience — there was no clean move to catch.")
         else:
-            dir_score = 25; notes.append(f"Price did move {fwd:+.1f} pts — a setup may have been there.")
+            dir_score = 25
+            notes.append(f"Price did move {fwd:+.1f} pts — a setup may have been there.")
         risk_score = 30  # no capital risked
         notes.append("No trade = no risk. Capital preservation is a valid choice.")
 
@@ -220,7 +230,7 @@ def score(req: ScoreRequest) -> dict:
     }
 
 
-def stats() -> dict:
+def stats() -> dict[str, Any]:
     conn = _ensure_table()
     rows = [dict(r) for r in conn.execute("SELECT * FROM decisions").fetchall()]
     conn.close()
@@ -228,10 +238,12 @@ def stats() -> dict:
     if n == 0:
         return {"n": 0, "accuracy": None, "avg_score": None, "by_difficulty": {}}
     correct = sum(1 for r in rows if r["direction_correct"])
-    by_diff: dict[str, dict] = {}
+    by_diff: dict[str, dict[str, int]] = {}
     for r in rows:
         d = by_diff.setdefault(r["difficulty"] or "?", {"n": 0, "correct": 0, "score": 0})
-        d["n"] += 1; d["correct"] += int(r["direction_correct"]); d["score"] += r["score"]
+        d["n"] += 1
+        d["correct"] += int(r["direction_correct"])
+        d["score"] += r["score"]
     return {
         "n": n,
         "accuracy": round(correct / n, 4),

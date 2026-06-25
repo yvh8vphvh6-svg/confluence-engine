@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import suppress
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -33,16 +34,18 @@ log = logging.getLogger("ws")
 router = APIRouter(prefix="/api/simulation", tags=["simulation"])
 
 # build cache shared across connections (timelines are pure functions of config)
-_CACHE: dict[tuple, LiveSimulation] = {}
+_CACHE: dict[tuple[Any, ...], LiveSimulation] = {}
 _CACHE_LOCK = asyncio.Lock()
 _MAX_CACHE = 8
 
 
-def _key(symbol, timeframe, seed, strategies, regime_filter) -> tuple:
+def _key(symbol: str, timeframe: str, seed: int, strategies: list[str],
+         regime_filter: str | None) -> tuple[Any, ...]:
     return (symbol, timeframe, int(seed), tuple(sorted(strategies)), regime_filter)
 
 
-async def _get_sim(symbol, timeframe, seed, strategies, regime_filter) -> LiveSimulation:
+async def _get_sim(symbol: str, timeframe: str, seed: int, strategies: list[str] | None,
+                   regime_filter: str | None) -> LiveSimulation:
     strategies = strategies or all_strategies()
     key = _key(symbol, timeframe, seed, strategies, regime_filter)
     async with _CACHE_LOCK:
@@ -71,7 +74,7 @@ class Session:
         self.auto_pause = True  # pause + teach on each fresh qualified setup
         self._dirty = asyncio.Event()  # wake the sender after a control change
 
-    async def configure(self, msg: dict) -> None:
+    async def configure(self, msg: dict[str, Any]) -> None:
         symbol = msg.get("symbol", self.settings.default_symbol)
         timeframe = msg.get("timeframe", self.settings.default_timeframe)
         seed = msg.get("seed", self.settings.default_seed)
@@ -105,10 +108,10 @@ class Session:
             payload = {**payload, "type": "frame", "candles": self.sim.window(self.cursor)}
         await self._send(payload)
 
-    async def _send(self, payload: dict) -> None:
+    async def _send(self, payload: dict[str, Any]) -> None:
         await self.ws.send_json(payload)
 
-    async def handle(self, msg: dict) -> None:
+    async def handle(self, msg: dict[str, Any]) -> None:
         kind = msg.get("type")
         if kind == "config":
             await self.configure(msg)
@@ -168,7 +171,7 @@ class Session:
             try:
                 await asyncio.wait_for(self._dirty.wait(), timeout=delay)
                 self._dirty.clear()
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
 

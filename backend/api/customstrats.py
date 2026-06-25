@@ -9,6 +9,7 @@ per-strategy breakdown alongside the built-ins. Honest framing: this tracks how
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -57,10 +58,10 @@ def save(s: CustomStrategy) -> int:
             (s.name, s.family, s.description, "\n".join(s.conditions), s.entry_trigger,
              s.stop_logic, s.target_rr, s.sizing, ",".join(s.timeframes), s.notes))
         c.commit()
-        return int(cur.lastrowid)
+        return int(cur.lastrowid or 0)
 
 
-def listing() -> list[dict]:
+def listing() -> list[dict[str, Any]]:
     with _conn() as c:
         rows = c.execute("SELECT * FROM custom_strategies ORDER BY id DESC").fetchall()
     out = []

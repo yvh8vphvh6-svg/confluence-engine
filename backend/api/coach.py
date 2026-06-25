@@ -225,7 +225,7 @@ def _call_claude(system: str, user: str, max_tokens: int = 600) -> tuple[str | N
             system=system,
             messages=[{"role": "user", "content": user}],
         )
-        text = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text").strip()
+        text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", None) == "text").strip()
         if not text:
             return None, "error", "empty response from model"
         return text, "ok", model
@@ -248,7 +248,7 @@ def coach(req: CoachRequest) -> CoachResponse:
                          source="rules", reason=reason)
 
 
-def assistant_health() -> dict:
+def assistant_health() -> dict[str, Any]:
     """One tiny real Messages call to report whether the assistant can reach Claude.
     Returns the precise reason on failure. Never includes the key value."""
     key_present = bool(_api_key())

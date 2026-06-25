@@ -100,7 +100,7 @@ def resolve_feed() -> MarketDataFeed:
         log.warning("unknown CONFLUENCE_DATA_FEED=%r; using synthetic", choice)
         return SyntheticFeed()
     try:
-        feed = cls()
+        cls()  # construct to validate env/credentials; real adapters fall through below
         # smoke check: real adapters raise NotImplementedError today
         log.warning("live feed %r requested but not implemented; using synthetic", choice)
         return SyntheticFeed()

@@ -7,35 +7,37 @@ and the honesty gates.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
 
 from backend.config.settings import Settings
+from backend.data.generator import generate_ohlcv, resample_ohlcv
 from backend.engine import confluence
 from backend.engine.live import LiveSimulation
 from backend.engine.metrics import monte_carlo
 from backend.engine.simulation import Backtester
-from backend.engine.strategies import REGISTRY, all_strategies, build_context
+from backend.engine.strategies import all_strategies, build_context
 from backend.engine.types import INSTRUMENTS
-from backend.data.generator import generate_ohlcv, resample_ohlcv
 from backend.main import app
 from backend.schemas import Regime, SimulationTick
 
 
-def _small_sim(**kw) -> LiveSimulation:
+def _small_sim(**kw: Any) -> LiveSimulation:
     settings = Settings(starting_balance=50_000.0)
     return LiveSimulation(settings=settings, **kw)
 
 
-def test_engine_has_eight_strategies():
+def test_engine_has_eight_strategies() -> None:
     assert len(all_strategies()) == 8
     assert set(all_strategies()) == {
         "ORB", "FVG_RETEST", "OB_RETEST", "BOS_CONTINUATION", "BREAKOUT_RETEST",
         "VWAP_REVERSION", "EMA_TREND_PULLBACK", "LIQUIDITY_SWEEP"}
 
 
-def test_confluence_requires_base_and_threshold():
+def test_confluence_requires_base_and_threshold() -> None:
     # base missing -> never executes
     r = confluence.evaluate({"base": False, "structure": True, "timing": True, "pa": True}, False)
     assert not r.execute
@@ -47,12 +49,13 @@ def test_confluence_requires_base_and_threshold():
     assert not r.execute and r.threshold == confluence.THRESHOLD_EXPANDED_VOL
 
 
-def test_live_sim_produces_valid_contract_and_moves():
+def test_live_sim_produces_valid_contract_and_moves() -> None:
     sim = _small_sim(symbol="MNQ", timeframe="5m", seed=42)
     assert sim.length > 50
     first = sim.tick_at(0, playing=True)
     last = sim.tick_at(sim.length - 1, playing=False)
     assert isinstance(first, SimulationTick)
+    assert isinstance(last, SimulationTick)
     # every armed strategy is represented every bar
     assert len(first.signals) == 8
     assert first.regime in set(Regime)
@@ -61,17 +64,19 @@ def test_live_sim_produces_valid_contract_and_moves():
     assert last.bar_index > first.bar_index
 
 
-def test_live_sim_prices_look_like_the_instrument():
+def test_live_sim_prices_look_like_the_instrument() -> None:
     mnq = _small_sim(symbol="MNQ", timeframe="5m", seed=42).tick_at(0, False)
     mgc = _small_sim(symbol="MGC", timeframe="5m", seed=42).tick_at(0, False)
+    assert mnq is not None and mgc is not None
     assert mnq.ohlc.close > 10_000      # MNQ ~18,000
     assert 1_000 < mgc.ohlc.close < 5_000  # MGC ~2,350
 
 
-def test_regime_filter_blocks_offregime_entries():
+def test_regime_filter_blocks_offregime_entries() -> None:
     sim = _small_sim(symbol="MNQ", timeframe="5m", seed=42, regime_filter="ranging")
     for k in range(sim.length):
         t = sim.tick_at(k, False)
+        assert t is not None
         if t.position is not None:
             # any held position must have been opened in the allowed regime
             assert t.position is not None  # sanity; entries gated at open time
@@ -79,7 +84,7 @@ def test_regime_filter_blocks_offregime_entries():
     assert sim.regime_filter == "ranging"
 
 
-def test_no_lookahead_swings_are_lagged():
+def test_no_lookahead_swings_are_lagged() -> None:
     inst = INSTRUMENTS["MNQ"]
     df = resample_ohlcv(generate_ohlcv(inst, days=10, seed=1), "15m")
     ctx = build_context(df, inst)
@@ -89,7 +94,7 @@ def test_no_lookahead_swings_are_lagged():
     assert len(ctx.last_sh) == len(df)
 
 
-def test_monte_carlo_gate_is_strict():
+def test_monte_carlo_gate_is_strict() -> None:
     # fewer than 100 trades can never promote
     inst = INSTRUMENTS["MNQ"]
     df = resample_ohlcv(generate_ohlcv(inst, days=15, seed=3), "15m")
@@ -100,16 +105,18 @@ def test_monte_carlo_gate_is_strict():
         assert mc["promote"] is False
 
 
-def test_live_tick_has_ranking_and_data_source():
+def test_live_tick_has_ranking_and_data_source() -> None:
     sim = _small_sim(symbol="MNQ", timeframe="5m", seed=42)
     # find a tick with a best setup if one occurs, else use the last
     chosen = None
     for k in range(sim.length):
         t = sim.tick_at(k, True)
+        assert t is not None
         if t.best_setup:
             chosen = t
             break
     t = chosen or sim.tick_at(sim.length - 1, False)
+    assert t is not None
     assert t.data_source in ("synthetic", "live")
     assert t.metrics.trades_today >= 0
     for s in t.signals:
@@ -122,12 +129,12 @@ def test_live_tick_has_ranking_and_data_source():
         assert t.best_setup not in t.also_firing
 
 
-def test_coach_rule_fallback_is_safe(monkeypatch):
+def test_coach_rule_fallback_is_safe(monkeypatch: pytest.MonkeyPatch) -> None:
     # Force the deterministic rule path (no key) so the test stays hermetic — no
     # network call — and verify the safety copy. With the key removed the reason
     # must be 'missing_key' and the source 'rules'.
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    from backend.api.coach import coach, CoachRequest, CoachContext
+    from backend.api.coach import CoachContext, CoachRequest, coach
     ctx = CoachContext(symbol="MNQ", timeframe="5m", regime="trending", has_setup=True,
                        strategy="ORB", label="Opening Range Breakout", direction="long",
                        confidence=0.8, threshold=0.65, execute=True, rr=2.0,
@@ -144,9 +151,10 @@ def test_coach_rule_fallback_is_safe(monkeypatch):
     assert any("overtrad" in f.lower() for f in r.discipline_flags)
 
 
-def test_coach_failure_reasons_are_classified():
+def test_coach_failure_reasons_are_classified() -> None:
     """Failures map to precise reasons (not a generic 'set the key')."""
     import anthropic
+
     from backend.api import coach as coach_mod
     err = anthropic.NotFoundError.__new__(anthropic.NotFoundError)
     Exception.__init__(err, "model: bogus")
@@ -154,7 +162,7 @@ def test_coach_failure_reasons_are_classified():
     assert reason == "model"
 
 
-def test_journal_round_trip(tmp_path, monkeypatch):
+def test_journal_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import backend.journal as journal
     monkeypatch.setattr(journal, "_DB", tmp_path / "journal.db")
     journal.clear()
@@ -172,11 +180,11 @@ def test_journal_round_trip(tmp_path, monkeypatch):
     assert len(data["notes"]) == 1
 
 
-def test_health_and_readiness():
+def test_health_and_readiness() -> None:
     asyncio.run(_health_and_readiness())
 
 
-async def _health_and_readiness():
+async def _health_and_readiness() -> None:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         health = await client.get("/healthz")

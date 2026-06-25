@@ -7,6 +7,8 @@ bars and only become 'available' at i+k. The simulation reads the
 """
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -27,11 +29,11 @@ def _wilder(values: np.ndarray, period: int) -> np.ndarray:
 
 
 def true_range(df: pd.DataFrame) -> np.ndarray:
-    h, l, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
+    h, lo, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
     prev_c = np.roll(c, 1)
     prev_c[0] = c[0]
-    tr = np.maximum.reduce([h - l, np.abs(h - prev_c), np.abs(l - prev_c)])
-    return tr
+    tr = np.maximum.reduce([h - lo, np.abs(h - prev_c), np.abs(lo - prev_c)])
+    return tr  # type: ignore[no-any-return]  # numpy ufunc returns Any
 
 
 def atr(df: pd.DataFrame, period: int = 14) -> np.ndarray:
@@ -40,9 +42,9 @@ def atr(df: pd.DataFrame, period: int = 14) -> np.ndarray:
 
 def adx(df: pd.DataFrame, period: int = 14) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Returns (adx, plus_di, minus_di)."""
-    h, l = df["high"].to_numpy(), df["low"].to_numpy()
+    h, lo = df["high"].to_numpy(), df["low"].to_numpy()
     up = h - np.roll(h, 1)
-    down = np.roll(l, 1) - l
+    down = np.roll(lo, 1) - lo
     up[0] = down[0] = 0.0
     plus_dm = np.where((up > down) & (up > 0), up, 0.0)
     minus_dm = np.where((down > up) & (down > 0), down, 0.0)
@@ -79,7 +81,7 @@ def rsi(values: np.ndarray, period: int = 14) -> np.ndarray:
         rs = avg_gain / avg_loss
         out = 100.0 - 100.0 / (1.0 + rs)
     out[np.isinf(rs)] = 100.0
-    return out
+    return out  # type: ignore[no-any-return]  # numpy expression returns Any
 
 
 def session_vwap(df: pd.DataFrame) -> np.ndarray:
@@ -102,13 +104,13 @@ def session_vwap(df: pd.DataFrame) -> np.ndarray:
     return out
 
 
-def confirmed_swings(df: pd.DataFrame, k: int = 3):
+def confirmed_swings(df: pd.DataFrame, k: int = 3) -> tuple[np.ndarray, np.ndarray]:
     """Fractal pivots confirmed k bars later.
 
     Returns two arrays giving, *as known at bar i*, the price of the most
     recent confirmed swing high / swing low. NaN until one exists.
     """
-    h, l = df["high"].to_numpy(), df["low"].to_numpy()
+    h, lo = df["high"].to_numpy(), df["low"].to_numpy()
     n = len(df)
     last_sh = np.full(n, np.nan)
     last_sl = np.full(n, np.nan)
@@ -119,71 +121,71 @@ def confirmed_swings(df: pd.DataFrame, k: int = 3):
         j = i - k
         if j - k >= 0:
             window_h = h[j - k:j + k + 1]
-            window_l = l[j - k:j + k + 1]
+            window_l = lo[j - k:j + k + 1]
             if h[j] == window_h.max() and (window_h == h[j]).sum() == 1:
                 sh_val = h[j]
-            if l[j] == window_l.min() and (window_l == l[j]).sum() == 1:
-                sl_val = l[j]
+            if lo[j] == window_l.min() and (window_l == lo[j]).sum() == 1:
+                sl_val = lo[j]
         last_sh[i] = sh_val
         last_sl[i] = sl_val
     return last_sh, last_sl
 
 
-def fair_value_gaps(df: pd.DataFrame):
+def fair_value_gaps(df: pd.DataFrame) -> list[dict[str, Any]]:
     """Detect 3-candle FVGs. Returns a list of dicts:
     {created_at, dir, low, high}. Available for trading at bars > created_at.
     Bullish FVG: low[i] > high[i-2]  -> gap [high[i-2], low[i]]
     Bearish FVG: high[i] < low[i-2]  -> gap [high[i], low[i-2]]
     """
-    h, l = df["high"].to_numpy(), df["low"].to_numpy()
+    h, lo = df["high"].to_numpy(), df["low"].to_numpy()
     gaps = []
     for i in range(2, len(df)):
-        if l[i] > h[i - 2]:
-            gaps.append({"created_at": i, "dir": 1, "low": float(h[i - 2]), "high": float(l[i])})
-        elif h[i] < l[i - 2]:
-            gaps.append({"created_at": i, "dir": -1, "low": float(h[i]), "high": float(l[i - 2])})
+        if lo[i] > h[i - 2]:
+            gaps.append({"created_at": i, "dir": 1, "low": float(h[i - 2]), "high": float(lo[i])})
+        elif h[i] < lo[i - 2]:
+            gaps.append({"created_at": i, "dir": -1, "low": float(h[i]), "high": float(lo[i - 2])})
     return gaps
 
 
-def order_blocks(df: pd.DataFrame):
+def order_blocks(df: pd.DataFrame) -> list[dict[str, Any]]:
     """Pragmatic order-block detection: the last opposing candle immediately
     before a displacement candle that creates an FVG.
     Returns list of {created_at, dir, low, high}."""
-    o, h, l, c = (df["open"].to_numpy(), df["high"].to_numpy(),
-                  df["low"].to_numpy(), df["close"].to_numpy())
+    o, h, lo, c = (df["open"].to_numpy(), df["high"].to_numpy(),
+                   df["low"].to_numpy(), df["close"].to_numpy())
     blocks = []
     for i in range(2, len(df)):
-        if l[i] > h[i - 2]:  # bullish displacement
+        if lo[i] > h[i - 2]:  # bullish displacement
             # nearest down candle in the run-up (i-1 or i-2)
             for j in (i - 1, i - 2):
                 if c[j] < o[j]:
                     blocks.append({"created_at": i, "dir": 1,
-                                   "low": float(l[j]), "high": float(h[j])})
+                                   "low": float(lo[j]), "high": float(h[j])})
                     break
-        elif h[i] < l[i - 2]:  # bearish displacement
+        elif h[i] < lo[i - 2]:  # bearish displacement
             for j in (i - 1, i - 2):
                 if c[j] > o[j]:
                     blocks.append({"created_at": i, "dir": -1,
-                                   "low": float(l[j]), "high": float(h[j])})
+                                   "low": float(lo[j]), "high": float(h[j])})
                     break
     return blocks
 
 
-def prior_day_levels(df: pd.DataFrame):
+def prior_day_levels(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     """Per-bar PDH/PDL: the high/low of the *previous* calendar day,
     known from the first bar of the current day onward."""
     days = df.index.normalize()
     n = len(df)
     pdh = np.full(n, np.nan)
     pdl = np.full(n, np.nan)
-    day_high: dict = {}
-    day_low: dict = {}
-    h, l = df["high"].to_numpy(), df["low"].to_numpy()
+    day_high: dict[Any, Any] = {}
+    day_low: dict[Any, Any] = {}
+    h, lo = df["high"].to_numpy(), df["low"].to_numpy()
     unique_days = list(pd.unique(days))
     for d in unique_days:
         mask = days == d
         day_high[d] = h[mask].max()
-        day_low[d] = l[mask].min()
+        day_low[d] = lo[mask].min()
     prev = {unique_days[i]: unique_days[i - 1] for i in range(1, len(unique_days))}
     for i in range(n):
         d = days[i]
@@ -196,7 +198,7 @@ def prior_day_levels(df: pd.DataFrame):
 RTH_OPEN_MINUTE = 9 * 60 + 30  # 09:30 ET cash open — OR anchors here, not pre-market
 
 
-def opening_range(df: pd.DataFrame, minutes: int = 15):
+def opening_range(df: pd.DataFrame, minutes: int = 15) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Per-bar opening-range high/low for the current day, finalised after the
     first `minutes` of the **09:30 cash open** (so pre-market bars don't pollute
     the OR). Known only after the OR window closes."""
@@ -205,7 +207,7 @@ def opening_range(df: pd.DataFrame, minutes: int = 15):
     or_high = np.full(n, np.nan)
     or_low = np.full(n, np.nan)
     or_done = np.zeros(n, dtype=bool)
-    h, l = df["high"].to_numpy(), df["low"].to_numpy()
+    h, lo = df["high"].to_numpy(), df["low"].to_numpy()
     cur_day = None
     or_start_ts = None
     running_h = -np.inf
@@ -227,7 +229,7 @@ def opening_range(df: pd.DataFrame, minutes: int = 15):
         if or_start_ts is not None:
             if (ts - or_start_ts).total_seconds() < minutes * 60:
                 running_h = max(running_h, h[i])
-                running_l = min(running_l, l[i])
+                running_l = min(running_l, lo[i])
             elif not done:
                 finalized_h, finalized_l = running_h, running_l
                 done = True

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -24,7 +24,7 @@ from . import confluence
 from . import metrics as metrics_mod
 from .execution import ExecutionModel
 from .strategies import REGISTRY, Ctx, build_context
-from .types import Fill, Instrument, Signal, Trade
+from .types import Instrument, Signal, Trade
 
 log = logging.getLogger("simulation")
 
@@ -59,7 +59,7 @@ class BacktestResult:
     timeframe: str
     seed: int
     trades: list[Trade] = field(default_factory=list)
-    metrics: dict = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
     state_transitions: int = 0
 
 
@@ -80,9 +80,9 @@ class Backtester:
         execu = ExecutionModel(self.inst, self.seed, self.news_bars)
         cooldown_bars = COOLDOWN_BARS.get(timeframe, 3)
 
-        state: dict = {"active_fvgs": [], "active_obs": [], "fvg_ptr": 0, "ob_ptr": 0}
+        state: dict[str, Any] = {"active_fvgs": [], "active_obs": [], "fvg_ptr": 0, "ob_ptr": 0}
         trades: list[Trade] = []
-        pos: Optional[Position] = None
+        pos: Position | None = None
         transitions = 0
 
         consec_losses = 0
@@ -127,7 +127,7 @@ class Backtester:
             if session_start_min is not None and (ts.hour * 60 + ts.minute) < session_start_min:
                 continue
 
-            sig: Optional[Signal] = fn(df, i, ctx, state)
+            sig: Signal | None = fn(df, i, ctx, state)
             if sig is None:
                 continue
             transitions += 1  # scanning -> confluence_check
@@ -171,25 +171,28 @@ class Backtester:
         return result
 
     # -- zone bookkeeping ---------------------------------------------------
-    def _advance_zones(self, state, ctx: Ctx, i: int):
+    def _advance_zones(self, state: dict[str, Any], ctx: Ctx, i: int) -> None:
         while state["fvg_ptr"] < len(ctx.fvgs) and ctx.fvgs[state["fvg_ptr"]]["created_at"] <= i - 1:
-            z = dict(ctx.fvgs[state["fvg_ptr"]]); z["consumed"] = False
+            z = dict(ctx.fvgs[state["fvg_ptr"]])
+            z["consumed"] = False
             state["active_fvgs"].append(z)
             state["fvg_ptr"] += 1
         state["active_fvgs"] = [z for z in state["active_fvgs"]
                                 if not z["consumed"] and i - z["created_at"] <= 60]
         while state["ob_ptr"] < len(ctx.obs) and ctx.obs[state["ob_ptr"]]["created_at"] <= i - 1:
-            z = dict(ctx.obs[state["ob_ptr"]]); z["consumed"] = False
+            z = dict(ctx.obs[state["ob_ptr"]])
+            z["consumed"] = False
             state["active_obs"].append(z)
             state["ob_ptr"] += 1
         state["active_obs"] = [z for z in state["active_obs"]
                                if not z["consumed"] and i - z["created_at"] <= 60]
 
     # -- position management ------------------------------------------------
-    def _manage(self, pos: Position, df, ctx: Ctx, execu: ExecutionModel,
-                i: int, timeframe: str) -> Optional[Trade]:
+    def _manage(self, pos: Position, df: pd.DataFrame, ctx: Ctx, execu: ExecutionModel,
+                i: int, timeframe: str) -> Trade | None:
         d = pos.direction
-        hi = df["high"].iat[i]; lo = df["low"].iat[i]
+        hi = df["high"].iat[i]
+        lo = df["low"].iat[i]
         atrv = ctx.atr[i] if not np.isnan(ctx.atr[i]) else pos.risk
 
         partial_level = pos.entry_price + d * 1.0 * pos.risk
@@ -230,7 +233,7 @@ class Backtester:
             return self._close_at(pos, df, ctx, execu, i, pos.target, "target")
         return None
 
-    def _close_at(self, pos: Position, df, ctx: Ctx, execu: ExecutionModel,
+    def _close_at(self, pos: Position, df: pd.DataFrame, ctx: Ctx, execu: ExecutionModel,
                   i: int, price: float, reason: str) -> Trade:
         d = pos.direction
         order_type = "limit" if reason == "target" else "market"
@@ -256,5 +259,5 @@ class Backtester:
             regime_at_entry=pos.regime, confidence=pos.confidence,
             exit_reason=reason, bars_held=i - pos.entry_index)
 
-    def _force_close(self, pos, df, ctx, execu, i) -> Trade:
+    def _force_close(self, pos: Position, df: pd.DataFrame, ctx: Ctx, execu: ExecutionModel, i: int) -> Trade:
         return self._close_at(pos, df, ctx, execu, i, df["close"].iat[i], "eod")

@@ -6,30 +6,30 @@ outputs into these models so the UI has a stable, validated contract.
 """
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class Regime(str, Enum):
+class Regime(StrEnum):
     trending = "trending"
     ranging = "ranging"
     high_vol = "high_vol"
     low_vol = "low_vol"
 
 
-class Direction(str, Enum):
+class Direction(StrEnum):
     long = "long"
     short = "short"
     flat = "flat"
 
 
-class Side(str, Enum):
+class Side(StrEnum):
     buy = "buy"
     sell = "sell"
 
 
-class OverlayKind(str, Enum):
+class OverlayKind(StrEnum):
     fvg = "FVG"
     order_block = "OB"
     opening_range = "ORB"

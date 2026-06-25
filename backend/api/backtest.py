@@ -7,15 +7,17 @@ checklist (factor coverage + regime + sample + gate + determinism + drawdown).
 """
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import pandas as pd
 from pydantic import BaseModel, Field
 
 from ..data.generator import generate_ohlcv, resample_ohlcv
-from ..engine import confluence
 from ..engine import metrics as metrics_mod
 from ..engine.simulation import WARMUP, Backtester
-from ..engine.strategies import REGISTRY, build_context
-from ..engine.types import INSTRUMENTS
+from ..engine.strategies import REGISTRY, Ctx, build_context
+from ..engine.types import INSTRUMENTS, Instrument
 
 # session-start presets (minutes from midnight ET) — extended session is 04:00-16:00
 SESSION_PRESETS = {
@@ -36,7 +38,7 @@ class BacktestRequest(BaseModel):
     session: str | None = None            # preset name (london/ny/power_hour/full)
 
 
-def _news_bars(df, seed: int) -> set[int]:
+def _news_bars(df: pd.DataFrame, seed: int) -> set[int]:
     rng = np.random.default_rng(seed + 777)
     out: set[int] = set()
     for i in range(len(df)):
@@ -46,7 +48,7 @@ def _news_bars(df, seed: int) -> set[int]:
     return out
 
 
-def _factor_coverage(df, inst, strategy: str, ctx) -> dict[str, float]:
+def _factor_coverage(df: pd.DataFrame, inst: Instrument, strategy: str, ctx: Ctx) -> dict[str, float]:
     """Fraction of emitted signals for which each confluence factor was present."""
     fn, _meta = REGISTRY[strategy]
     bt = Backtester(inst, seed=0)
@@ -68,7 +70,7 @@ def _factor_coverage(df, inst, strategy: str, ctx) -> dict[str, float]:
     return {k: round(v / total, 3) for k, v in counts.items()}
 
 
-def run_backtest(req: BacktestRequest) -> dict:
+def run_backtest(req: BacktestRequest) -> dict[str, Any]:
     if req.symbol not in INSTRUMENTS:
         raise ValueError(f"unknown instrument {req.symbol!r}")
     if req.timeframe not in ("1m", "5m", "15m", "30m", "1h"):
