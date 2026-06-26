@@ -1,10 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
-import Controls from "../components/dashboard/Controls";
-import ControlsDrawer from "../components/dashboard/ControlsDrawer";
+import ControlsBar from "../components/dashboard/ControlsBar";
 import ChartHeader from "../components/dashboard/ChartHeader";
 import RegimeStrip from "../components/dashboard/RegimeStrip";
 import MetricsPanel from "../components/dashboard/MetricsPanel";
@@ -43,7 +42,6 @@ export default function PracticePage() {
   const setTourOpen = useStore((s) => s.setTourOpen);
   const teach = useStore((s) => s.teach);
   const autoPauseSetting = useSettings((s) => s.settings.autoPause);
-  const [metricsOpen, setMetricsOpen] = useState(false);
 
   useEffect(() => startStream(), []);
 
@@ -120,17 +118,14 @@ export default function PracticePage() {
     <div className="space-y-4">
       <BootHero />
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <ControlsDrawer />
-          <div>
-            <h1 className="text-xl font-semibold text-text">Practice</h1>
-            <p className="text-xs text-muted">
-              Streaming synthetic chart · it auto-pauses to teach you qualified setups · Space = play/pause, ← → = step.{" "}
-              <button className="text-neon underline" onClick={() => setTourOpen(true)}>Take the tour</button>
-              {" · "}
-              <button className="text-neon underline" onClick={() => setLearnOpen(true)}>Lessons</button>
-            </p>
-          </div>
+        <div>
+          <h1 className="text-xl font-semibold text-text">Practice</h1>
+          <p className="text-xs text-muted">
+            Streaming synthetic chart · it auto-pauses to teach you qualified setups · Space = play/pause, ← → = step.{" "}
+            <button className="text-neon underline" onClick={() => setTourOpen(true)}>Take the tour</button>
+            {" · "}
+            <button className="text-neon underline" onClick={() => setLearnOpen(true)}>Lessons</button>
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <SessionReview />
@@ -138,48 +133,49 @@ export default function PracticePage() {
         </div>
       </div>
 
-      <ParallaxStage className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
-        {/* inline controls column on md+; on mobile they live in the slide-over drawer */}
-        <aside className="hidden md:block" data-tour="controls">
-          <Controls />
-        </aside>
-
-        <section className="min-w-0 space-y-4">
-          <PreSessionCheckin />
-          <DisciplineBanner />
-          {teach && <TeachCard />}
-          <ChallengesCard />
-          <div className="panel panel-focus min-w-0 overflow-hidden" data-tour="chart">
-            <ChartHeader />
-            <div className="bg-background p-2">
-              <PriceChart />
-            </div>
-            <RegimeStrip />
+      {/* Single focal column: compact controls → alerts → prediction → chart →
+          active setup, with everything secondary tucked into collapsibles. */}
+      <ParallaxStage className="space-y-4">
+        <ControlsBar />
+        <PreSessionCheckin />
+        <DisciplineBanner />
+        {teach && <TeachCard />}
+        <div className="panel panel-focus min-w-0 overflow-hidden" data-tour="chart">
+          <ChartHeader />
+          <div className="bg-background p-2">
+            <PriceChart />
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          <RegimeStrip />
+        </div>
+        <BestSetup />
+        <ChallengesCard />
+
+        {/* secondary — tucked away until called */}
+        <details className="group">
+          <summary className="btn flex w-full cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden" data-tour="trade">
+            <span>Place a manual trade</span>
+            <span aria-hidden="true" className="text-muted motion-safe:transition-transform group-open:rotate-90">▸</span>
+          </summary>
+          <div className="mt-3">
             <TradePanel />
-            <BestSetup />
           </div>
-          <Blotter />
+        </details>
 
-          {/* secondary panels: collapsed below the chart on mobile, always shown on md+ */}
-          <button
-            type="button"
-            onClick={() => setMetricsOpen((o) => !o)}
-            aria-expanded={metricsOpen}
-            className="btn flex w-full items-center justify-between md:hidden"
-          >
+        <Blotter />
+
+        <details className="group">
+          <summary className="btn flex w-full cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden">
             <span>Account, metrics &amp; leaderboard</span>
-            <span aria-hidden="true">{metricsOpen ? "▾" : "▸"}</span>
-          </button>
-          <div className={`${metricsOpen ? "block" : "hidden"} space-y-4 md:block`}>
+            <span aria-hidden="true" className="text-muted motion-safe:transition-transform group-open:rotate-90">▸</span>
+          </summary>
+          <div className="mt-3 space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <PaperAccount />
               <MetricsPanel />
             </div>
             <Leaderboard compact limit={10} />
           </div>
-        </section>
+        </details>
       </ParallaxStage>
 
       <details className="panel p-4">

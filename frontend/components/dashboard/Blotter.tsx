@@ -24,14 +24,20 @@ export default function Blotter() {
   };
 
   return (
-    <div className="panel flex flex-col p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="panel-head">Trade blotter (recent)</p>
+    <details className="panel group flex flex-col p-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden">
+        <span className="panel-head">Trade blotter (recent)</span>
+        <span className="flex items-center gap-2 text-[10px] text-muted">
+          {rows.length} trade{rows.length === 1 ? "" : "s"}
+          <span aria-hidden="true" className="motion-safe:transition-transform group-open:rotate-90">▸</span>
+        </span>
+      </summary>
+      <div className="mt-3 flex justify-end">
         <button className="btn" onClick={exportCsv} disabled={!rows.length}>
           Export CSV
         </button>
       </div>
-      <div className="max-h-[220px] overflow-y-auto">
+      <div className="mt-2 max-h-[220px] overflow-y-auto">
         <table className="w-full text-right text-[11px]">
           <thead className="sticky top-0 bg-panel text-[9px] uppercase tracking-wider text-muted">
             <tr>
@@ -64,6 +70,6 @@ export default function Blotter() {
           </tbody>
         </table>
       </div>
-    </div>
+    </details>
   );
 }

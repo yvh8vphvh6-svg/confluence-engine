@@ -44,18 +44,24 @@ export default function ChallengesCard() {
         </div>
       </div>
 
-      {/* the rest, condensed to one line each */}
+      {/* the rest, collapsed by default — one line each when expanded */}
       {rest.length > 0 && (
-        <ul className="mt-2 space-y-1">
-          {rest.map((c) => (
-            <li key={c.id} className="flex items-center justify-between gap-2 px-1 text-[11px]">
-              <span className={c.complete ? "text-profit/80" : "text-muted"}>
-                {c.complete ? "✓" : "○"} {c.text}
-              </span>
-              <span className="shrink-0 font-mono text-[10px] text-muted">{c.progress}/{c.target}</span>
-            </li>
-          ))}
-        </ul>
+        <details className="group mt-2">
+          <summary className="cursor-pointer list-none text-[11px] text-muted [&::-webkit-details-marker]:hidden">
+            <span className="group-open:hidden">Show {rest.length} more challenge{rest.length === 1 ? "" : "s"} ▸</span>
+            <span className="hidden group-open:inline">Hide ▾</span>
+          </summary>
+          <ul className="mt-1 space-y-1">
+            {rest.map((c) => (
+              <li key={c.id} className="flex items-center justify-between gap-2 px-1 text-[11px]">
+                <span className={c.complete ? "text-profit/80" : "text-muted"}>
+                  {c.complete ? "✓" : "○"} {c.text}
+                </span>
+                <span className="shrink-0 font-mono text-[10px] text-muted">{c.progress}/{c.target}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       <p className="mt-2 text-[10px] text-muted">Refreshes daily · tracked from your real trades today.</p>
