@@ -3,7 +3,9 @@
 import dynamic from "next/dynamic";
 
 import { ANTI_PATTERNS } from "../../lib/antipatterns";
+import { ANTI_PATTERN_DEMOS } from "../../lib/patternDemos";
 
+const PatternDemo = dynamic(() => import("../../components/PatternDemo"), { ssr: false });
 const FvgDiagram = dynamic(() => import("../../components/education/Diagrams").then((m) => m.FvgDiagram), { ssr: false });
 const OrderBlockDiagram = dynamic(() => import("../../components/education/Diagrams").then((m) => m.OrderBlockDiagram), { ssr: false });
 const OpeningRangeDiagram = dynamic(() => import("../../components/education/Diagrams").then((m) => m.OpeningRangeDiagram), { ssr: false });
@@ -29,26 +31,41 @@ export default function AntiPatternsPage() {
       </header>
 
       <div className="space-y-3">
-        {ANTI_PATTERNS.map((a) => (
-          <div key={a.name} className="panel p-4">
-            <h2 className="text-base font-semibold text-loss">{a.name}</h2>
-            <div className="mt-2 grid gap-3 md:grid-cols-2">
-              <div className="space-y-2 text-sm">
-                <Row label="Looks like" tone="text-text" v={a.looksLike} />
-                <Row label="Why it's tempting" tone="text-warn" v={a.tempting} />
-                <Row label="Why it fails" tone="text-loss" v={a.whyItFails} />
-                <Row label="How to spot it" tone="text-neon" v={a.howToSpot} />
-                <Row label="Do this instead" tone="text-profit" v={a.insteadDo} />
-              </div>
-              {a.diagram && (
-                <div className="rounded-lg border border-line bg-black/20 p-2">
-                  <Diagram kind={a.diagram} />
-                  <p className="mt-1 text-center text-[10px] text-muted">Illustrative pattern (synthetic)</p>
+        {ANTI_PATTERNS.map((a) => {
+          const demo = ANTI_PATTERN_DEMOS[a.name];
+          return (
+            <div key={a.name} className="panel p-4">
+              <h2 className="text-base font-semibold text-loss">{a.name}</h2>
+              <div className="mt-2 grid gap-3 md:grid-cols-2">
+                <div className="space-y-2 text-sm">
+                  <Row label="Looks like" tone="text-text" v={a.looksLike} />
+                  <Row label="Why it's tempting" tone="text-warn" v={a.tempting} />
+                  <Row label="Why it fails" tone="text-loss" v={a.whyItFails} />
+                  <Row label="How to spot it" tone="text-neon" v={a.howToSpot} />
+                  <Row label="Do this instead" tone="text-profit" v={a.insteadDo} />
                 </div>
-              )}
+                {/* visual slot — always renders something: a clip, a diagram, or text */}
+                <div className="rounded-lg border border-line bg-black/20 p-2">
+                  {demo ? (
+                    <>
+                      {demo.caption && <p className="mb-1.5 text-[11px] text-muted">{demo.caption}</p>}
+                      <PatternDemo bars={demo.bars} zones={demo.zones} marks={demo.marks} height={170} />
+                    </>
+                  ) : a.diagram ? (
+                    <>
+                      <Diagram kind={a.diagram} />
+                      <p className="mt-1 text-center text-[10px] text-muted">Illustrative pattern (synthetic)</p>
+                    </>
+                  ) : (
+                    <div className="grid min-h-[120px] place-items-center px-2 text-center text-[11px] text-muted">
+                      {a.looksLike}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

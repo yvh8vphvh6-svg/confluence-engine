@@ -99,6 +99,19 @@ export default function PracticePage() {
     }
   }, [bootComplete, setTourOpen]);
 
+  // "Replay tour" handoff from Settings (it navigates here via window.location so
+  // it doesn't depend on the app-router context in that app-wide layout button).
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("ce_replay_tour") === "1") {
+        sessionStorage.removeItem("ce_replay_tour");
+        setTourOpen(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [setTourOpen]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -121,7 +134,7 @@ export default function PracticePage() {
         <div>
           <h1 className="text-xl font-semibold text-text">Practice</h1>
           <p className="text-xs text-muted">
-            Streaming synthetic chart · it auto-pauses to teach you qualified setups · Space = play/pause, ← → = step.{" "}
+            Watch, predict, learn.{" "}
             <button className="text-neon underline" onClick={() => setTourOpen(true)}>Take the tour</button>
             {" · "}
             <button className="text-neon underline" onClick={() => setLearnOpen(true)}>Lessons</button>
@@ -133,39 +146,48 @@ export default function PracticePage() {
         </div>
       </div>
 
-      {/* Single focal column: compact controls → alerts → prediction → chart →
-          active setup, with everything secondary tucked into collapsibles. */}
+      {/* ONE focal point: the chart + a plain "what do you see?" prompt and the
+          current decision. Everything else is closed by default so a first-time
+          user lands on the chart with nothing competing for attention. */}
       <ParallaxStage className="space-y-4">
         <ControlsBar />
         <PreSessionCheckin />
         <DisciplineBanner />
         {teach && <TeachCard />}
+
         <div className="panel panel-focus min-w-0 overflow-hidden" data-tour="chart">
           <ChartHeader />
           <div className="bg-background p-2">
             <PriceChart />
           </div>
           <RegimeStrip />
+          <p className="border-t border-line px-3 py-2 text-center text-xs text-muted">
+            👀 <span className="font-medium text-text">What do you see?</span> Just watch it play — it pauses the moment a real setup forms and walks you through it.
+          </p>
         </div>
-        <BestSetup />
-        <ChallengesCard />
 
-        {/* secondary — tucked away until called */}
+        <BestSetup />
+
+        {/* everything secondary — closed by default, one tap to open */}
+        <details className="group">
+          <summary className="btn flex w-full cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden" data-tour="challenges">
+            <span>Daily challenges</span>
+            <span aria-hidden="true" className="text-muted motion-safe:transition-transform group-open:rotate-90">▸</span>
+          </summary>
+          <div className="mt-3"><ChallengesCard /></div>
+        </details>
+
         <details className="group">
           <summary className="btn flex w-full cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden" data-tour="trade">
             <span>Place a manual trade</span>
             <span aria-hidden="true" className="text-muted motion-safe:transition-transform group-open:rotate-90">▸</span>
           </summary>
-          <div className="mt-3">
-            <TradePanel />
-          </div>
+          <div className="mt-3"><TradePanel /></div>
         </details>
-
-        <Blotter />
 
         <details className="group">
           <summary className="btn flex w-full cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden">
-            <span>Account, metrics &amp; leaderboard</span>
+            <span>Your account, history &amp; stats</span>
             <span aria-hidden="true" className="text-muted motion-safe:transition-transform group-open:rotate-90">▸</span>
           </summary>
           <div className="mt-3 space-y-4">
@@ -173,20 +195,22 @@ export default function PracticePage() {
               <PaperAccount />
               <MetricsPanel />
             </div>
+            <Blotter />
             <Leaderboard compact limit={10} />
           </div>
         </details>
-      </ParallaxStage>
 
-      <details className="panel p-4">
-        <summary className="cursor-pointer text-xs font-medium text-muted">
-          Engine internals (auto-sim demo position &amp; per-strategy signals)
-        </summary>
-        <div className="mt-3 grid gap-4 md:grid-cols-2">
-          <PositionCard />
-          <StrategySignals />
-        </div>
-      </details>
+        <details className="group">
+          <summary className="btn flex w-full cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden">
+            <span>Engine internals (auto-sim &amp; per-strategy signals)</span>
+            <span aria-hidden="true" className="text-muted motion-safe:transition-transform group-open:rotate-90">▸</span>
+          </summary>
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <PositionCard />
+            <StrategySignals />
+          </div>
+        </details>
+      </ParallaxStage>
 
       <ManualController />
       <SignalInspector />

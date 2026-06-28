@@ -8,6 +8,8 @@ import {
   type DecisionScenario, type DecisionResult, type DecisionStats,
 } from "../../lib/api";
 import { fmt, pctRaw, REGIME_LABEL } from "../../lib/format";
+import { plainDrillOutcome } from "../../lib/teach";
+import { Gloss } from "../../components/Gloss";
 
 const DrillChart = dynamic(() => import("../../components/DrillChart"), { ssr: false });
 
@@ -168,12 +170,24 @@ export default function DrillsPage() {
                     {result.total_score}/100
                   </span>
                 </div>
+
+                {/* PLAIN-ENGLISH WHY — what the chart did and which read was right, before the score grid */}
+                {action && (
+                  <div className="mt-2 rounded-lg border border-neon/40 bg-neon/5 p-3 text-xs leading-relaxed text-text">
+                    <p className="mb-1 text-[10px] uppercase tracking-wider text-neon">What just happened — and why</p>
+                    {plainDrillOutcome(action, result, sc.regime)}
+                  </div>
+                )}
+
                 <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
                   <Cell label="Direction" v={`${result.direction_score}/60`} ok={result.direction_correct} />
                   <Cell label="Risk mgmt" v={`${result.risk_score}/40`} />
                   <Cell label="Outcome" v={result.outcome} />
                 </div>
-                <p className="mt-2 text-xs text-muted">Forward move {result.forward_move >= 0 ? "+" : ""}{result.forward_move} pts · R {fmt(result.r_multiple)}</p>
+                <p className="mt-2 text-xs text-muted">
+                  Forward move {result.forward_move >= 0 ? "+" : ""}{result.forward_move} pts ·{" "}
+                  <Gloss k="R">R {fmt(result.r_multiple)}</Gloss>
+                </p>
                 <ul className="mt-2 space-y-1">
                   {result.notes.map((n, i) => (
                     <li key={i} className="rounded border border-line bg-black/20 px-2 py-1 text-[11px] text-text">{n}</li>

@@ -78,6 +78,12 @@ export default function BestSetup() {
               <p className="font-mono text-text">{rr ? `${rr.toFixed(1)}:1` : "—"}</p>
             </div>
           </div>
+          {rr ? (
+            <p className="mt-1 text-left text-[10px] leading-snug text-muted">
+              Entry = where you get in, stop = where you bail if wrong, target = where you take profit.
+              R:R {rr.toFixed(1)}:1 means you risk 1 to try to make {rr.toFixed(1)}.
+            </p>
+          ) : null}
           <div className="mt-2">
             {best.recommended ? (
               <span className="chip border-profit/50 text-profit">recommended · passed gate in regime</span>

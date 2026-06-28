@@ -19,6 +19,25 @@ import { useReducedMotion } from "../lib/useMotion";
 
 export type AnnChartBar = { time: number; open: number; high: number; low: number; close: number };
 
+// lightweight-charts throws if times aren't finite + strictly ascending, which
+// would leave a blank chart. Drop any bar that's malformed or out-of-order so the
+// chart always gets drawable data (or nothing → the text fallback below).
+function sanitizeBars(bars: AnnChartBar[]): AnnChartBar[] {
+  const out: AnnChartBar[] = [];
+  let lastT = -Infinity;
+  for (const b of bars) {
+    if (
+      !Number.isFinite(b.time) || !Number.isFinite(b.open) || !Number.isFinite(b.high) ||
+      !Number.isFinite(b.low) || !Number.isFinite(b.close) || b.high < b.low || b.time <= lastT
+    ) {
+      continue;
+    }
+    out.push(b);
+    lastT = b.time;
+  }
+  return out;
+}
+
 type TradeLevel = Extract<Annotation, { kind: "level" }>;
 type PlacedLabel = { id: string; label: string; price?: number; note: string; color: string; ax: number; ay: number; lx: number; ly: number };
 
@@ -68,10 +87,13 @@ export default function AnnotatedChart({
 
   // live values read by the imperative chart callbacks (so zoom survives parent
   // re-renders — the chart is created once, never torn down on data churn)
-  const candlesRef = useRef(candles);
+  // sanitized once per data change; everything downstream uses these safe bars
+  const safe = useMemo(() => sanitizeBars(candles), [candles]);
+
+  const candlesRef = useRef(safe);
   const annotationsRef = useRef(annotations);
   const structureRef = useRef(false);
-  candlesRef.current = candles;
+  candlesRef.current = safe;
   annotationsRef.current = annotations;
 
   const reduced = useReducedMotion();
@@ -89,8 +111,8 @@ export default function AnnotatedChart({
   // content signatures — re-run data/annotation effects only on real change, not
   // on every new array identity (keeps the user's zoom from snapping back)
   const candlesSig = useMemo(
-    () => (candles.length ? `${candles.length}:${candles[0].time}:${candles[candles.length - 1].time}:${candles[candles.length - 1].close}` : "0"),
-    [candles],
+    () => (safe.length ? `${safe.length}:${safe[0].time}:${safe[safe.length - 1].time}:${safe[safe.length - 1].close}` : "0"),
+    [safe],
   );
   const annoSig = useMemo(
     () =>
@@ -192,9 +214,13 @@ export default function AnnotatedChart({
   const applyData = useCallback(() => {
     const series = seriesRef.current;
     if (!series) return;
-    series.setData(
-      candlesRef.current.map((c): CandlestickData => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })),
-    );
+    try {
+      series.setData(
+        candlesRef.current.map((c): CandlestickData => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })),
+      );
+    } catch {
+      return; // unexpected bad data → leave the chart empty rather than throw
+    }
     redrawAnnotations();
     frameSetup(); // default view: framed to the setup window, not the whole stream
     relayout();
@@ -302,7 +328,7 @@ export default function AnnotatedChart({
     relayout();
   }, [annoSig, showStructure, redrawAnnotations, relayout]);
 
-  if (candles.length === 0) {
+  if (safe.length === 0) {
     return <div className="grid h-[180px] w-full place-items-center text-xs text-muted">No structure to annotate for this window.</div>;
   }
 

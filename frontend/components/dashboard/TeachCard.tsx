@@ -11,6 +11,8 @@ import type { EntryCtx, Prediction } from "../../lib/quality";
 import { useDiscipline } from "../../lib/useDiscipline";
 import { play, pause } from "../../lib/stream";
 import { fmt, usd, FACTOR_LABEL, REGIME_LABEL } from "../../lib/format";
+import { plainSetupSentence } from "../../lib/teach";
+import { Gloss } from "../Gloss";
 
 const AnnotatedChart = dynamic(() => import("../AnnotatedChart"), { ssr: false });
 
@@ -321,20 +323,18 @@ export default function TeachCard() {
             </div>
           )}
 
+          {/* PLAIN-ENGLISH WHY — the teacher's read, before any jargon */}
+          <div className="mb-3 rounded-lg border border-warn/40 bg-warn/5 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-warn">In plain English — why this setup</p>
+            <p className="mt-1 text-sm leading-relaxed text-text">
+              {plainSetupSentence(sig.name, sig.direction === "short" ? "short" : "long", tick.regime)}
+            </p>
+          </div>
+
           {/* (Part 1) annotated answer reveal — marks on the real price structure */}
           <div className="mb-3 rounded-lg border border-line bg-surface2/40 p-2.5">
             <p className="mb-2 text-[10px] uppercase tracking-wider text-muted">On the chart — what justified this setup</p>
             <AnnotatedChart candles={annBars} annotations={annotations} height={260} caption={wrongPickCaption} />
-          </div>
-
-          {/* (2) engine reasoning for the direction — read, not noise */}
-          <div className="mb-3 rounded-lg border border-line bg-surface2/40 px-3 py-2 text-xs">
-            <p className="text-[10px] uppercase tracking-wider text-muted">Engine reasoning</p>
-            <p className="mt-1 text-text">
-              Reads <span className={`font-semibold ${directionTone(sig.direction)}`}>{sig.direction.toUpperCase()}</span> —{" "}
-              {REGIME_LABEL[tick.regime] ?? tick.regime} regime, {factorsPresent}/{FACTORS.length} confluence factors. {sig.evidence}
-            </p>
-            <p className="mt-1 text-[10px] text-muted">Graded on the engine&apos;s confluence read of the formed setup — not the next candle; this sharpens on realistic data.</p>
           </div>
 
           <div className="grid grid-cols-4 gap-2 text-center text-xs">
@@ -343,37 +343,61 @@ export default function TeachCard() {
             <Cell label="Target" v={fmt(sig.target)} tone="text-profit" />
             <Cell label="R:R" v={rr ? `${rr.toFixed(1)}:1` : "—"} />
           </div>
+          <p className="mt-1 text-[10px] leading-snug text-muted">
+            <span className="text-text">Entry</span> = where you&apos;d get in · <span className="text-loss">stop</span> = where you bail if you&apos;re wrong ·{" "}
+            <span className="text-profit">target</span> = where you take profit.{" "}
+            <Gloss k="rr">R:R {rr ? `${rr.toFixed(1)}:1` : "—"}</Gloss> means you risk 1 to try to make {rr ? rr.toFixed(1) : "—"}.
+          </p>
+          <p className="mt-2 text-[11px] text-muted">
+            ≈ {fmt(contracts, 2)} <Gloss k="contracts">contracts</Gloss> — sized so a full stop-out costs only ~{riskPct}% of your {usd.format(balance)} paper account. Honor the stop.
+          </p>
 
-          {/* setup quality breakdown — real per-factor confluence sub-scores */}
-          <div className="mt-3 rounded-lg border border-line bg-surface2/40 p-2.5">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted">Setup quality</p>
-              <span className="font-mono text-xs text-text">
-                {factorsPresent}/{FACTORS.length} factors · {Math.round(conf * 100)}/{Math.round(threshold * 100)} thr
-              </span>
-            </div>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {FACTORS.map((f) => {
-                const on = sig.factors[f];
-                const w = sig.confluence?.score_breakdown?.[f] ?? 0;
-                return (
-                  <span key={f} className={`chip ${on ? "border-profit/40 text-profit" : "border-line text-muted"}`}>
-                    {on ? "✓" : "✕"} {FACTOR_LABEL[f] ?? f}{on ? ` +${w.toFixed(2)}` : ""}
+          {/* technical breakdown — kept available, secondary to the plain-English read */}
+          <details className="mt-3 rounded-lg border border-line bg-surface2/40">
+            <summary className="cursor-pointer px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted">
+              Show the technical breakdown
+            </summary>
+            <div className="space-y-3 px-3 pb-3 text-xs">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted">Engine reasoning</p>
+                <p className="mt-1 text-text">
+                  Reads <span className={`font-semibold ${directionTone(sig.direction)}`}>{sig.direction.toUpperCase()}</span> —{" "}
+                  {REGIME_LABEL[tick.regime] ?? tick.regime} regime,{" "}
+                  <Gloss k="factors">{factorsPresent}/{FACTORS.length} confluence factors</Gloss>. {sig.evidence}
+                </p>
+                <p className="mt-1 text-[10px] text-muted">Graded on the engine&apos;s confluence read of the formed setup — not the next candle; this sharpens on realistic data.</p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted">
+                    <Gloss k="confluence">Setup quality</Gloss>
+                  </p>
+                  <span className="font-mono text-xs text-text">
+                    {factorsPresent}/{FACTORS.length} factors · {Math.round(conf * 100)}/{Math.round(threshold * 100)} thr
                   </span>
-                );
-              })}
-            </div>
-          </div>
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {FACTORS.map((f) => {
+                    const on = sig.factors[f];
+                    const w = sig.confluence?.score_breakdown?.[f] ?? 0;
+                    return (
+                      <span key={f} className={`chip ${on ? "border-profit/40 text-profit" : "border-line text-muted"}`}>
+                        {on ? "✓" : "✕"} {FACTOR_LABEL[f] ?? f}{on ? ` +${w.toFixed(2)}` : ""}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
 
-          <p className="mt-2 text-xs text-text">
-            Regime <span className="text-neon">{REGIME_LABEL[tick.regime] ?? tick.regime}</span> · {sig.evidence}.
-            {sig.regime_expectancy_r != null && (
-              <> Backtested edge ≈ <span className="font-mono">{fmt(sig.regime_expectancy_r)}R</span> (synthetic — proves logic, not a live edge).</>
-            )}
-          </p>
-          <p className="mt-1 text-[11px] text-muted">
-            ≈ {fmt(contracts, 2)} contracts is ~{riskPct}% of your {usd.format(balance)} paper account. Honor the stop.
-          </p>
+              {sig.regime_expectancy_r != null && (
+                <p className="text-[11px] text-muted">
+                  Backtested edge ≈ <Gloss k="expectancy"><span className="font-mono">{fmt(sig.regime_expectancy_r)}R</span></Gloss>{" "}
+                  (synthetic — proves the logic works, not a live money-maker).
+                </p>
+              )}
+            </div>
+          </details>
 
           {/* one-tap rationale captured on Take / Skip */}
           <p className="mt-3 text-[10px] uppercase tracking-wider text-muted">Why? (one tap)</p>

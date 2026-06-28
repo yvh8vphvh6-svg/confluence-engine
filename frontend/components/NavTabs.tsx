@@ -8,11 +8,11 @@ import { useStore } from "../lib/store";
 
 type Item = { href: string; label: string };
 
-// Primary modes shown as flat tabs
+// Primary modes shown as flat tabs — kept to what a beginner needs front-and-
+// centre. "Real Chart" was redundant with "Real Mode" (both view real recorded
+// bars) so it's consolidated into Real Mode; Backtest moved to the Advanced menu.
 const MODES: Item[] = [
   { href: "/", label: "Practice" },
-  { href: "/backtest", label: "Backtest" },
-  { href: "/real", label: "Real Chart" },
   { href: "/real-mode", label: "Real Mode" },
 ];
 
@@ -65,6 +65,13 @@ const GROUPS: { title: string; items: Item[]; tourId?: string }[] = [
       { href: "/mentor", label: "Mentor Mode" },
       { href: "/success", label: "Success Stories" },
       { href: "/share", label: "Strategy Sharing" },
+    ],
+  },
+  {
+    // Power-user tools kept out of a beginner's way (still fully functional).
+    title: "Advanced",
+    items: [
+      { href: "/backtest", label: "Backtest" },
     ],
   },
 ];

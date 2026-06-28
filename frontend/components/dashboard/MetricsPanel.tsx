@@ -2,6 +2,7 @@
 
 import { useStore } from "../../lib/store";
 import { usd, fmt, pctRaw, signColor } from "../../lib/format";
+import { Gloss } from "../Gloss";
 import TiltCard from "../TiltCard";
 import ConfluenceGauge from "./ConfluenceGauge";
 import EquityCurve from "./EquityCurve";
@@ -40,6 +41,10 @@ export default function MetricsPanel() {
           <Stat label="Max DD" value={m ? pctRaw(m.max_drawdown_pct) : "—"} tone="text-loss" />
           <Stat label="Daily P&L" value={m ? usd.format(m.daily_pnl) : "—"} tone={signColor(m?.daily_pnl)} />
         </div>
+        <p className="mt-2 text-[10px] leading-snug text-muted">
+          New here? <Gloss k="expectancy">Expectancy (R)</Gloss> is your average result per trade in risk-units, and{" "}
+          <Gloss k="winRate">win rate</Gloss> is how often you win — hover either for the plain-English meaning.
+        </p>
         <div className="mt-3 flex flex-wrap gap-2 text-[10px]">
           {m?.daily_stop_active && (
             <span className="chip border-loss/40 text-loss">−2R daily stop active</span>

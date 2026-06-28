@@ -20,7 +20,7 @@ export default function ChallengesCard() {
   const fill = active.complete ? "bg-profit/70" : "bg-muted/40";
 
   return (
-    <div className="panel p-4" data-tour="challenges">
+    <div className="panel p-4">
       <div className="mb-2 flex items-center justify-between">
         <p className="panel-head">Daily challenges</p>
         {reminders && open > 0 ? (

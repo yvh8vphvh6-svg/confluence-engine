@@ -11,7 +11,7 @@ import {
   SeriesMarker,
   UTCTimestamp,
 } from "lightweight-charts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // A reusable, lightweight "clip" that draws a hand-authored OHLC pattern left to
 // right (~1–2s), then reveals highlight zones/markers and holds the finished
@@ -45,9 +45,23 @@ export default function PatternDemo({
   const [runId, setRunId] = useState(0); // bump to replay
   const [done, setDone] = useState(false);
 
+  // Guard against missing/malformed bars: an empty or invalid clip would make the
+  // y-axis autoscale NaN and render a blank box. If the data isn't drawable we
+  // show a text note instead — never an empty chart.
+  const valid = useMemo(
+    () =>
+      bars.length >= 2 &&
+      bars.every(
+        (b) =>
+          Number.isFinite(b.o) && Number.isFinite(b.h) && Number.isFinite(b.l) && Number.isFinite(b.c) &&
+          b.h >= b.l && b.h + 1e-9 >= Math.max(b.o, b.c) && b.l - 1e-9 <= Math.min(b.o, b.c),
+      ),
+    [bars],
+  );
+
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || !valid) return;
 
     const chart = createChart(el, {
       width: el.clientWidth,
@@ -140,7 +154,18 @@ export default function PatternDemo({
       chart.remove();
       linesRef.current = [];
     };
-  }, [runId, bars, zones, marks, height, durationMs]);
+  }, [runId, valid, bars, zones, marks, height, durationMs]);
+
+  if (!valid) {
+    return (
+      <div
+        className="grid w-full place-items-center rounded-lg border border-line bg-black/20 px-3 py-6 text-center text-[11px] text-muted"
+        style={{ minHeight: 120 }}
+      >
+        Illustration unavailable for this example.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-1.5">

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -108,7 +107,6 @@ export default function SettingsButton() {
   const update = useSettings((s) => s.update);
   const resetAll = useSettings((s) => s.resetAll);
   const setTourOpen = useStore((s) => s.setTourOpen);
-  const router = useRouter();
 
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const reduced = useReducedMotion();
@@ -224,12 +222,23 @@ export default function SettingsButton() {
     setMsg("Settings restored to defaults.");
   };
 
-  // Replay the guided tour: close settings, head to Practice (where <Tour/> is
-  // mounted and the data-tour anchors live), then open it.
+  // Replay the guided tour: close settings, then head to Practice (where <Tour/>
+  // is mounted and the data-tour anchors live). A sessionStorage handoff survives
+  // the navigation and re-opens the tour on arrival. We deliberately AVOID
+  // useRouter() here: SettingsButton renders in the root layout (every page), and
+  // a router-context hook in that shared, app-wide component is consumed during
+  // static (`output: export`) prerender where the app-router context isn't
+  // mounted — that crashes prerender with a null-context error. window.location
+  // needs no render-time context.
   const replayTour = () => {
     setOpen(false);
-    setTourOpen(true);
-    router.push("/");
+    try {
+      sessionStorage.setItem("ce_replay_tour", "1");
+    } catch {
+      /* ignore unavailable storage */
+    }
+    if (typeof window !== "undefined") window.location.assign("/");
+    else setTourOpen(true);
   };
 
   // motion-aware enter/leave classes (reduced motion → opacity only)

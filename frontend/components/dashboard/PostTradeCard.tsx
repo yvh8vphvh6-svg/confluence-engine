@@ -6,6 +6,7 @@ import { logPaperTrade, setTradeFeeling } from "../../lib/api";
 import { fmt, signColor, usd } from "../../lib/format";
 import { useSettings } from "../../lib/settings";
 import { tradeLogPayload, useStore } from "../../lib/store";
+import { Gloss } from "../Gloss";
 
 const FEELINGS: { key: string; label: string }[] = [
   { key: "good", label: "Good" },
@@ -103,9 +104,11 @@ export default function PostTradeCard() {
               <p className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Post-trade</p>
               <p className="text-sm text-text">
                 {t.strategy} {t.direction} ·{" "}
-                <span className={won ? "text-profit" : t.r_multiple < 0 ? "text-loss" : "text-muted"}>
-                  {t.r_multiple >= 0 ? "+" : ""}{t.r_multiple.toFixed(2)}R
-                </span>
+                <Gloss k="R">
+                  <span className={won ? "text-profit" : t.r_multiple < 0 ? "text-loss" : "text-muted"}>
+                    {t.r_multiple >= 0 ? "+" : ""}{t.r_multiple.toFixed(2)}R
+                  </span>
+                </Gloss>
               </p>
             </div>
             <div className="text-right">
@@ -217,7 +220,9 @@ export default function PostTradeCard() {
               </p>
             </div>
             <div className="text-right">
-              <span className={`font-mono text-2xl font-bold ${signColor(unreal)}`}>{unrealR >= 0 ? "+" : ""}{unrealR.toFixed(2)}R</span>
+              <Gloss k="R">
+                <span className={`font-mono text-2xl font-bold ${signColor(unreal)}`}>{unrealR >= 0 ? "+" : ""}{unrealR.toFixed(2)}R</span>
+              </Gloss>
               <p className={`font-mono text-[11px] ${signColor(unreal)}`}>{usd.format(unreal)}</p>
             </div>
           </div>
